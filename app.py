@@ -1,6 +1,7 @@
 """
-FastAPI service: import audio from supported social URLs (Instagram reel/post).
-POST /import-audio  { "url": "https://www.instagram.com/reel/..." }
+FastAPI service: import audio from supported social URLs.
+POST /import-audio  { "url": "https://..." }
+Supports Instagram, YouTube, TikTok, and Snapchat via Geonode Scraper API + yt-dlp.
 """
 from __future__ import annotations
 
@@ -71,7 +72,7 @@ async def import_audio(body: ImportRequest):
     if not is_supported_url(url):
         raise HTTPException(
             status_code=400,
-            detail="Unsupported URL. Paste a public Instagram reel or post link.",
+            detail="Unsupported URL. Paste a public Instagram, YouTube, TikTok, or Snapchat link.",
         )
     try:
         loop = asyncio.get_running_loop()

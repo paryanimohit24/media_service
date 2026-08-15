@@ -1,4 +1,4 @@
-"""Proxy selection: manual override OR automatic free rotating pool."""
+"""Proxy selection: Geonode (paid) OR manual override OR legacy free pool."""
 from __future__ import annotations
 
 import os
@@ -6,7 +6,8 @@ import random
 import threading
 from urllib.parse import urlparse
 
-from free_proxy_pool import auto_proxy_enabled, mark_bad, next_proxy, pool_status, refresh_pool
+from free_proxy_pool import auto_proxy_enabled, mark_bad, next_fallback_proxies, pool_status, refresh_pool
+from geonode_config import geonode_enabled, geonode_status
 
 _lock = threading.Lock()
 _manual_round_robin_index = 0
@@ -43,7 +44,6 @@ def manual_proxy_configured() -> bool:
 
 
 def get_manual_proxy() -> str | None:
-    """Admin-only overrides (optional). End users never set these."""
     single = _clean(os.environ.get("YT_DLP_PROXY"))
     if single:
         return single
@@ -62,22 +62,26 @@ def get_manual_proxy() -> str | None:
     return _clean(os.environ.get("HTTPS_PROXY")) or _clean(os.environ.get("HTTP_PROXY"))
 
 
+def use_free_proxy_pool() -> bool:
+    """Free public proxy pool — disabled when Geonode Scraper API is active."""
+    if geonode_enabled():
+        return False
+    return auto_proxy_enabled() or proxy_fallback_attempts() > 0
+
+
 def get_proxy_url() -> str | None:
-    """
-    Priority:
-    1. Manual admin env (YT_DLP_PROXY / list / HTTP_PROXY)
-    2. Auto free rotating pool (default, no subscription)
-    """
     manual = get_manual_proxy()
     if manual:
         return manual
     if auto_proxy_enabled():
+        from free_proxy_pool import next_proxy
+
         return next_proxy()
     return None
 
 
 def report_proxy_failure(proxy: str | None) -> None:
-    if not proxy:
+    if not proxy or geonode_enabled():
         return
     if _manual_proxy_configured():
         return
@@ -118,44 +122,48 @@ def mask_proxy(url: str | None) -> str | None:
 
 
 def proxy_status() -> dict:
-    mode = "direct"
-    if _manual_proxy_configured():
+    if geonode_enabled():
+        mode = "geonode_scraper"
+    elif _manual_proxy_configured():
         mode = "manual"
     elif auto_proxy_enabled():
         mode = "auto_free_rotate"
+    else:
+        mode = "direct"
 
-    return {
-        "proxy_enabled": _manual_proxy_configured() or auto_proxy_enabled(),
+    status = {
+        "proxy_enabled": geonode_enabled() or _manual_proxy_configured() or auto_proxy_enabled(),
         "proxy_mode": mode,
         "proxy_max_attempts_per_request": max_attempts(),
         "proxy_direct_fallback": allow_direct_fallback(),
         "proxy_fallback_attempts": proxy_fallback_attempts(),
-        **pool_status(),
+        **geonode_status(),
     }
+    if use_free_proxy_pool():
+        status.update(pool_status())
+    return status
 
 
 def warm_pool() -> int:
-    if _manual_proxy_configured():
+    if geonode_enabled() or not use_free_proxy_pool():
         return 0
-    if auto_proxy_enabled() or proxy_fallback_attempts() > 0:
-        return refresh_pool(force=True)
-    return 0
+    return refresh_pool(force=True)
 
 
 def direct_only() -> bool:
-    """No proxy — single direct yt-dlp attempt."""
-    return not _manual_proxy_configured() and not auto_proxy_enabled()
+    return not _manual_proxy_configured() and not auto_proxy_enabled() and not geonode_enabled()
 
 
 def proxy_fallback_attempts() -> int:
-    """
-    When direct_only(), retry with this many free proxies after direct fails.
-    Default 3 — fast direct first, then limited proxy fallback for datacenter IPs.
-    Set YT_DLP_PROXY_FALLBACK_ATTEMPTS=0 to disable.
-    """
-    if not direct_only():
+    if geonode_enabled() or not direct_only():
         return 0
     try:
         return max(0, min(3, int(os.environ.get("YT_DLP_PROXY_FALLBACK_ATTEMPTS", "3"))))
     except ValueError:
         return 3
+
+
+def next_fallback_proxies_list(limit: int) -> list[str]:
+    if not use_free_proxy_pool():
+        return []
+    return next_fallback_proxies(limit)

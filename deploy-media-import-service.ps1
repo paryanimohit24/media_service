@@ -32,7 +32,7 @@ gcloud run deploy $Service `
   --timeout 360 `
   --min-instances 0 `
   --max-instances 3 `
-  --set-env-vars "YT_DLP_AUTO_PROXY=false,YT_DLP_PROXY_FALLBACK_ATTEMPTS=3,YT_DLP_PROXY_HEALTH_CHECK=false,YT_DLP_PROXY_HEALTH_TIMEOUT_SEC=1" `
+  --set-env-vars "GEONODE_ENABLED=true,GEONODE_ALLOW_DIRECT=false,GEONODE_PROCESSING_MODE=async,GEONODE_PROXY_COUNTRY=US,YT_DLP_AUTO_PROXY=false,YT_DLP_PROXY_FALLBACK_ATTEMPTS=0" `
   --allow-unauthenticated `
   --quiet
 

@@ -1,8 +1,9 @@
 """
-Manual test: download reel audio (auto-rotating free proxy by default).
+Manual test: download audio via Geonode Scraper API (+ yt-dlp fallback).
 
 Usage:
   python test_import.py "https://www.instagram.com/reel/XXXX/"
+  python test_import.py "https://www.youtube.com/watch?v=XXXX"
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from importer import import_audio_from_url
+from importer import import_audio_from_url, is_supported_url
 from proxy_config import proxy_status, warm_pool
 
 
@@ -32,8 +33,8 @@ def _load_env_file(path: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Test Instagram reel import via proxy")
-    parser.add_argument("url", nargs="?", help="Instagram reel/post URL")
+    parser = argparse.ArgumentParser(description="Test social URL import via Geonode")
+    parser.add_argument("url", nargs="?", help="Instagram / YouTube / TikTok / Snapchat URL")
     parser.add_argument("--env-file", default=".env", help="Optional .env file (default: .env)")
     parser.add_argument(
         "--proxy",
@@ -59,7 +60,14 @@ def main() -> int:
 
     url = (args.url or os.environ.get("TEST_REEL_URL") or "").strip()
     if not url:
-        print("Error: pass reel URL as argument or set TEST_REEL_URL in .env", file=sys.stderr)
+        print(
+            "Error: pass URL as argument or set TEST_REEL_URL in .env",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not is_supported_url(url):
+        print("Error: unsupported URL for this service", file=sys.stderr)
         return 1
 
     print(f"Importing: {url}")
@@ -77,9 +85,6 @@ def main() -> int:
             return 0
     except Exception as e:
         print(f"FAILED: {e}", file=sys.stderr)
-        active = status.get("proxy_active")
-        if active:
-            print(f"Proxy used: {active}", file=sys.stderr)
         return 3
 
 
