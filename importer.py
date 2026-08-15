@@ -14,6 +14,7 @@ from geonode_config import (
     geonode_enabled,
     geonode_max_attempts,
     geonode_proxy_url,
+    import_strategy,
 )
 from media_download import media_to_m4a
 from page_parser import detect_platform, instagram_fetch_urls, parse_media_url
@@ -89,7 +90,14 @@ def geonode_allow_direct_fallback() -> bool:
 
 
 def _import_via_geonode_scrape(url: str, tmpdir: str, platform: str) -> ImportResult:
-    fetch_urls = instagram_fetch_urls(url) if platform == "instagram" else [url]
+    from geonode_config import geonode_try_embed
+
+    if platform == "instagram":
+        fetch_urls = [url.strip()]
+        if geonode_try_embed():
+            fetch_urls = instagram_fetch_urls(url)
+    else:
+        fetch_urls = [url]
     last_error: Exception | None = None
 
     for fetch_url in fetch_urls:
@@ -175,26 +183,7 @@ def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
         return ImportResult(audio_path=audio_path, title=title, ext=ext if ext != "m4a" else "m4a")
 
 
-def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
-    platform = detect_platform(url)
-    if not platform:
-        raise ValueError(
-            "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat public links."
-        )
-
-    # 1) Geonode Scraper API (residential proxy page fetch → parse → CDN download)
-    if geonode_enabled():
-        try:
-            result = _import_via_geonode_scrape(url, tmpdir, platform)
-            print(f"[media-import] success via geonode-scrape ({platform})", flush=True)
-            return result
-        except Exception as e:
-            print(
-                f"[media-import] geonode scrape path failed ({platform}): {_format_error(e)}",
-                flush=True,
-            )
-
-    # 2) yt-dlp with Geonode/manual/free proxies (no direct IP when Geonode disallows it)
+def _import_via_ytdlp_attempts(url: str, tmpdir: str) -> ImportResult:
     attempts = _build_ytdlp_proxies()
     last_error: Exception | None = None
 
@@ -223,5 +212,51 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
                 shutil.rmtree(attempt_dir, ignore_errors=True)
 
     raise RuntimeError(
-        _format_error(last_error) if last_error else "All import attempts failed."
+        _format_error(last_error) if last_error else "All yt-dlp attempts failed."
     )
+
+
+def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
+    platform = detect_platform(url)
+    if not platform:
+        raise ValueError(
+            "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat public links."
+        )
+
+    strategy = import_strategy() if geonode_enabled() else "ytdlp_first"
+    print(f"[media-import] strategy={strategy} platform={platform}", flush=True)
+
+    # Fast path: yt-dlp downloads bestaudio only (not full video when IG provides separate audio).
+    if strategy == "ytdlp_first":
+        try:
+            return _import_via_ytdlp_attempts(url, tmpdir)
+        except Exception as e:
+            print(
+                f"[media-import] yt-dlp path failed ({platform}): {_format_error(e)}",
+                flush=True,
+            )
+            if not geonode_enabled():
+                raise
+
+        try:
+            result = _import_via_geonode_scrape(url, tmpdir, platform)
+            print(f"[media-import] success via geonode-scrape fallback ({platform})", flush=True)
+            return result
+        except Exception as e:
+            raise RuntimeError(
+                _format_error(e) if e else "yt-dlp and Geonode scrape both failed."
+            ) from e
+
+    # geonode_first: scrape then yt-dlp (slow when scrape fails on Instagram)
+    if geonode_enabled():
+        try:
+            result = _import_via_geonode_scrape(url, tmpdir, platform)
+            print(f"[media-import] success via geonode-scrape ({platform})", flush=True)
+            return result
+        except Exception as e:
+            print(
+                f"[media-import] geonode scrape path failed ({platform}): {_format_error(e)}",
+                flush=True,
+            )
+
+    return _import_via_ytdlp_attempts(url, tmpdir)

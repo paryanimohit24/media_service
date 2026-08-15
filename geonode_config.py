@@ -57,7 +57,20 @@ def geonode_allow_direct() -> bool:
     return _env_bool("GEONODE_ALLOW_DIRECT", False)
 
 
-def geonode_max_attempts() -> int:
+def geonode_try_embed() -> bool:
+    """Second Instagram embed scrape is slow; default off."""
+    return _env_bool("GEONODE_TRY_EMBED", False)
+
+
+def import_strategy() -> str:
+    """
+    ytdlp_first = fast path (try yt-dlp before Geonode scrape).
+    geonode_first = scrape page via Geonode then yt-dlp fallback (slow when scrape fails).
+    """
+    raw = (_clean(os.environ.get("IMPORT_STRATEGY")) or "ytdlp_first").lower()
+    if raw in ("ytdlp_first", "ytdlp", "fast"):
+        return "ytdlp_first"
+    return "geonode_first"
     try:
         return max(1, min(6, int(os.environ.get("GEONODE_MAX_ATTEMPTS", "3"))))
     except ValueError:
@@ -116,4 +129,6 @@ def geonode_status() -> dict:
         "geonode_allow_direct": geonode_allow_direct(),
         "geonode_proxy_url_configured": bool(geonode_proxy_url()),
         "geonode_max_attempts": geonode_max_attempts(),
+        "import_strategy": import_strategy(),
+        "geonode_try_embed": geonode_try_embed(),
     }
