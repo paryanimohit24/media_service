@@ -22,6 +22,18 @@ docker push $Image
 if ($LASTEXITCODE -ne 0) { throw "docker push failed" }
 
 Write-Host "Deploying to Cloud Run [$Service]..."
+
+$EnvVars = "GEONODE_ENABLED=true,GEONODE_ALLOW_DIRECT=false,GEONODE_PROCESSING_MODE=async,GEONODE_PROXY_COUNTRY=US,YT_DLP_AUTO_PROXY=false,YT_DLP_PROXY_FALLBACK_ATTEMPTS=0"
+if ($env:GEONODE_API_KEY) {
+  $EnvVars = "GEONODE_API_KEY=$($env:GEONODE_API_KEY),$EnvVars"
+  Write-Host "GEONODE_API_KEY set (length $($env:GEONODE_API_KEY.Length))"
+} else {
+  Write-Warning "GEONODE_API_KEY not set — set it before deploy or update Cloud Run env manually."
+}
+if ($env:GEONODE_PROXY_URL) {
+  $EnvVars = "$EnvVars,GEONODE_PROXY_URL=$($env:GEONODE_PROXY_URL)"
+}
+
 gcloud run deploy $Service `
   --image $Image `
   --region $Region `
@@ -32,7 +44,7 @@ gcloud run deploy $Service `
   --timeout 360 `
   --min-instances 0 `
   --max-instances 3 `
-  --set-env-vars "GEONODE_ENABLED=true,GEONODE_ALLOW_DIRECT=false,GEONODE_PROCESSING_MODE=async,GEONODE_PROXY_COUNTRY=US,YT_DLP_AUTO_PROXY=false,YT_DLP_PROXY_FALLBACK_ATTEMPTS=0" `
+  --set-env-vars $EnvVars `
   --allow-unauthenticated `
   --quiet
 
