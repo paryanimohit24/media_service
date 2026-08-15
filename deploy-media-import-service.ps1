@@ -1,4 +1,4 @@
-# Deploy media_import_service to Cloud Run (Instagram reel URL → audio)
+# Deploy media_import_service to Cloud Run
 # Project: music-ai-app-489904 | Region: asia-south1
 
 $ErrorActionPreference = "Stop"
@@ -25,28 +25,28 @@ Write-Host "Deploying to Cloud Run [$Service]..."
 
 $EnvVars = "GEONODE_ENABLED=true,GEONODE_ALLOW_DIRECT=false,GEONODE_PROCESSING_MODE=async,GEONODE_PROXY_COUNTRY=US,YT_DLP_AUTO_PROXY=false,YT_DLP_PROXY_FALLBACK_ATTEMPTS=0"
 if ($env:GEONODE_API_KEY) {
-  $EnvVars = "GEONODE_API_KEY=$($env:GEONODE_API_KEY),$EnvVars"
-  Write-Host "GEONODE_API_KEY set (length $($env:GEONODE_API_KEY.Length))"
+    $EnvVars = "GEONODE_API_KEY=$($env:GEONODE_API_KEY),$EnvVars"
+    Write-Host "GEONODE_API_KEY set (length $($env:GEONODE_API_KEY.Length))"
 } else {
-  Write-Warning "GEONODE_API_KEY not set — set it before deploy or update Cloud Run env manually."
+    Write-Warning "GEONODE_API_KEY not set. Set it before deploy or update Cloud Run env manually."
 }
 if ($env:GEONODE_PROXY_URL) {
-  $EnvVars = "$EnvVars,GEONODE_PROXY_URL=$($env:GEONODE_PROXY_URL)"
+    $EnvVars = "$EnvVars,GEONODE_PROXY_URL=$($env:GEONODE_PROXY_URL)"
 }
 
 gcloud run deploy $Service `
-  --image $Image `
-  --region $Region `
-  --project $Project `
-  --port 8001 `
-  --memory 1Gi `
-  --cpu 1 `
-  --timeout 360 `
-  --min-instances 0 `
-  --max-instances 3 `
-  --set-env-vars $EnvVars `
-  --allow-unauthenticated `
-  --quiet
+    --image $Image `
+    --region $Region `
+    --project $Project `
+    --port 8001 `
+    --memory 1Gi `
+    --cpu 1 `
+    --timeout 360 `
+    --min-instances 0 `
+    --max-instances 3 `
+    --set-env-vars $EnvVars `
+    --allow-unauthenticated `
+    --quiet
 
 $Url = gcloud run services describe $Service --region $Region --project $Project --format="value(status.url)"
 Write-Host "Service URL: $Url"
@@ -54,4 +54,4 @@ Write-Host ""
 Write-Host "If backend gets 403 from this service, in GCP Console add:"
 Write-Host "  Principal: song-backend@music-ai-app-489904.iam.gserviceaccount.com"
 Write-Host "  Role: Cloud Run Invoker"
-Write-Host "  (on service media-import-service)"
+Write-Host "  on service: media-import-service"
