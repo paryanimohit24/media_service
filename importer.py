@@ -1,23 +1,14 @@
-"""Download audio from supported social URLs (Geonode Scraper API + yt-dlp)."""
+"""Download audio from supported social URLs via yt-dlp (optional Geonode proxy)."""
 from __future__ import annotations
 
 import os
-import re
 import shutil
 from dataclasses import dataclass
 
 import yt_dlp
 
-from geonode_client import GeonodeError, extract_html
-from geonode_config import (
-    geonode_allow_direct,
-    geonode_enabled,
-    geonode_max_attempts,
-    geonode_proxy_url,
-    import_strategy,
-)
-from media_download import media_to_m4a
-from page_parser import detect_platform, instagram_fetch_urls, parse_media_url
+from geonode_config import geonode_allow_direct, geonode_max_attempts, geonode_proxy_url
+from page_parser import detect_platform
 from proxy_config import (
     get_manual_proxy,
     get_proxy_url,
@@ -34,6 +25,8 @@ class ImportResult:
     audio_path: str
     title: str
     ext: str
+    bytes_downloaded: int
+    audio_size_bytes: int
 
 
 def is_supported_url(url: str) -> bool:
@@ -51,7 +44,7 @@ def _format_error(exc: Exception) -> str:
 
 
 def _build_ytdlp_proxies() -> list[str | None]:
-    """Proxy attempt order for yt-dlp. Geonode mode skips direct server IP."""
+    """Proxy attempt order for yt-dlp."""
     attempts: list[str | None] = []
     seen: set[str | None] = set()
 
@@ -61,79 +54,57 @@ def _build_ytdlp_proxies() -> list[str | None]:
             seen.add(key)
             attempts.append(proxy)
 
-    if geonode_enabled():
-        geonode_proxy = geonode_proxy_url()
-        if geonode_proxy:
-            for _ in range(geonode_max_attempts()):
-                add(geonode_proxy)
-        elif not geonode_allow_direct():
-            # Scraper API only — yt-dlp without proxy is last resort when allowed.
-            pass
-        else:
+    geonode_proxy = geonode_proxy_url()
+    if geonode_proxy:
+        for _ in range(geonode_max_attempts()):
+            add(geonode_proxy)
+        if geonode_allow_direct():
             add(None)
-
-        if manual_proxy_configured():
-            add(get_manual_proxy())
     else:
         add(None)
-        if manual_proxy_configured():
-            add(get_manual_proxy())
-        if use_free_proxy_pool():
-            for _ in range(max_attempts()):
-                add(get_proxy_url())
+
+    if manual_proxy_configured():
+        add(get_manual_proxy())
+    if use_free_proxy_pool():
+        for _ in range(max_attempts()):
+            add(get_proxy_url())
+
+    if allow_direct_fallback() and None not in seen:
+        add(None)
 
     return attempts or [None]
 
 
-def geonode_allow_direct_fallback() -> bool:
-    return geonode_allow_direct()
+def allow_direct_fallback() -> bool:
+    from proxy_config import allow_direct_fallback as _allow
+
+    return _allow()
 
 
-def _import_via_geonode_scrape(url: str, tmpdir: str, platform: str) -> ImportResult:
-    from geonode_config import geonode_try_embed
+class _DownloadTracker:
+    def __init__(self) -> None:
+        self.bytes_downloaded = 0
+        self._fragment_bytes = 0
 
-    if platform == "instagram":
-        fetch_urls = [url.strip()]
-        if geonode_try_embed():
-            fetch_urls = instagram_fetch_urls(url)
-    else:
-        fetch_urls = [url]
-    last_error: Exception | None = None
-
-    for fetch_url in fetch_urls:
-        try:
-            html = extract_html(fetch_url)
-            media_url = parse_media_url(html, platform=platform)
-            if not media_url:
-                raise RuntimeError("Could not find media URL in scraped page.")
-
-            print(
-                f"[media-import] geonode scrape resolved media for {platform}",
-                flush=True,
-            )
-            audio_path = media_to_m4a(media_url, tmpdir, proxy=None)
-            title = _title_from_url(url, platform)
-            return ImportResult(audio_path=audio_path, title=title, ext="m4a")
-        except (GeonodeError, Exception) as e:
-            last_error = e
-            print(
-                f"[media-import] geonode scrape failed for {fetch_url}: {_format_error(e)}",
-                flush=True,
-            )
-
-    raise RuntimeError(
-        _format_error(last_error) if last_error else "Geonode scrape did not return media."
-    )
-
-
-def _title_from_url(url: str, platform: str) -> str:
-    slug = re.sub(r"[^\w-]", "_", url.rsplit("/", 1)[-1]).strip("_")
-    if not slug:
-        slug = platform
-    return f"{platform}_{slug}"[:80]
+    def hook(self, status: dict) -> None:
+        state = status.get("status")
+        if state == "downloading":
+            downloaded = status.get("downloaded_bytes")
+            if isinstance(downloaded, int) and downloaded >= 0:
+                self._fragment_bytes = downloaded
+        elif state == "finished":
+            finished_bytes = status.get("total_bytes")
+            if not isinstance(finished_bytes, int) or finished_bytes <= 0:
+                filename = status.get("filename")
+                if filename and os.path.isfile(filename):
+                    finished_bytes = os.path.getsize(filename)
+            if isinstance(finished_bytes, int) and finished_bytes > 0:
+                self.bytes_downloaded += finished_bytes
+            self._fragment_bytes = 0
 
 
 def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
+    tracker = _DownloadTracker()
     out_template = os.path.join(tmpdir, "import.%(ext)s")
     socket_timeout = 45 if proxy else 25
     ydl_opts = {
@@ -143,6 +114,7 @@ def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
         "quiet": True,
         "no_warnings": True,
         "socket_timeout": socket_timeout,
+        "progress_hooks": [tracker.hook],
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -179,8 +151,22 @@ def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
                 raise RuntimeError("Download finished but audio file was not found.")
             audio_path = candidates[0]
 
+        audio_size = os.path.getsize(audio_path)
+        if audio_size <= 0:
+            raise RuntimeError("Downloaded audio file is empty.")
+
         ext = os.path.splitext(audio_path)[1].lstrip(".") or "m4a"
-        return ImportResult(audio_path=audio_path, title=title, ext=ext if ext != "m4a" else "m4a")
+        bytes_downloaded = tracker.bytes_downloaded
+        if bytes_downloaded <= 0:
+            bytes_downloaded = audio_size
+
+        return ImportResult(
+            audio_path=audio_path,
+            title=title,
+            ext=ext if ext != "m4a" else "m4a",
+            bytes_downloaded=bytes_downloaded,
+            audio_size_bytes=audio_size,
+        )
 
 
 def _import_via_ytdlp_attempts(url: str, tmpdir: str) -> ImportResult:
@@ -196,7 +182,8 @@ def _import_via_ytdlp_attempts(url: str, tmpdir: str) -> ImportResult:
             result = _import_via_ytdlp(url, attempt_dir, proxy)
             print(
                 f"[media-import] yt-dlp success attempt {attempt_index}/{len(attempts)} "
-                f"via {mask_proxy(proxy) or 'direct'}",
+                f"via {mask_proxy(proxy) or 'direct'} "
+                f"bytes_downloaded={result.bytes_downloaded} audio_size={result.audio_size_bytes}",
                 flush=True,
             )
             return result
@@ -223,40 +210,5 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
             "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat public links."
         )
 
-    strategy = import_strategy() if geonode_enabled() else "ytdlp_first"
-    print(f"[media-import] strategy={strategy} platform={platform}", flush=True)
-
-    # Fast path: yt-dlp downloads bestaudio only (not full video when IG provides separate audio).
-    if strategy == "ytdlp_first":
-        try:
-            return _import_via_ytdlp_attempts(url, tmpdir)
-        except Exception as e:
-            print(
-                f"[media-import] yt-dlp path failed ({platform}): {_format_error(e)}",
-                flush=True,
-            )
-            if not geonode_enabled():
-                raise
-
-        try:
-            result = _import_via_geonode_scrape(url, tmpdir, platform)
-            print(f"[media-import] success via geonode-scrape fallback ({platform})", flush=True)
-            return result
-        except Exception as e:
-            raise RuntimeError(
-                _format_error(e) if e else "yt-dlp and Geonode scrape both failed."
-            ) from e
-
-    # geonode_first: scrape then yt-dlp (slow when scrape fails on Instagram)
-    if geonode_enabled():
-        try:
-            result = _import_via_geonode_scrape(url, tmpdir, platform)
-            print(f"[media-import] success via geonode-scrape ({platform})", flush=True)
-            return result
-        except Exception as e:
-            print(
-                f"[media-import] geonode scrape path failed ({platform}): {_format_error(e)}",
-                flush=True,
-            )
-
+    print(f"[media-import] strategy=ytdlp_only platform={platform}", flush=True)
     return _import_via_ytdlp_attempts(url, tmpdir)
