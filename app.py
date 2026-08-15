@@ -1,7 +1,7 @@
 """
-FastAPI service: import audio from supported social URLs.
+FastAPI service: import audio from supported social URLs via yt-dlp.
 POST /import-audio  { "url": "https://..." }
-Supports Instagram, YouTube, TikTok, and Snapchat via Geonode Scraper API + yt-dlp.
+Supports Instagram, YouTube, TikTok, and Snapchat.
 """
 from __future__ import annotations
 
@@ -19,6 +19,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from importer import import_audio_from_url, is_supported_url
 from proxy_config import proxy_status
+
+BYTES_DOWNLOADED_HEADER = "X-Import-Bytes-Downloaded"
+AUDIO_SIZE_HEADER = "X-Import-Audio-Size-Bytes"
+DOWNLOAD_MODE_HEADER = "X-Import-Download-Mode"
 
 
 @asynccontextmanager
@@ -46,7 +50,7 @@ def _safe_filename(title: str, ext: str) -> str:
     return f"{base}.{ext}"
 
 
-def _run_import(url: str, client_attempted: bool | None = None) -> tuple[bytes, str, str]:
+def _run_import(url: str, client_attempted: bool | None = None) -> tuple[bytes, str, str, int, int, str]:
     started = time.time()
     with tempfile.TemporaryDirectory() as tmpdir:
         result = import_audio_from_url(url, tmpdir)
@@ -58,12 +62,21 @@ def _run_import(url: str, client_attempted: bool | None = None) -> tuple[bytes, 
         strategy = "server-fallback" if client_attempted else "server-direct"
         print(
             f"[media-import] strategy={strategy} client_attempted={bool(client_attempted)} "
-            f"duration_ms={elapsed_ms} bytes={len(data)}",
+            f"duration_ms={elapsed_ms} bytes_downloaded={result.bytes_downloaded} "
+            f"audio_size={result.audio_size_bytes} download_mode={result.download_mode} "
+            f"response_bytes={len(data)}",
             flush=True,
         )
         filename = _safe_filename(result.title, result.ext)
         media_type = "audio/mp4" if result.ext == "m4a" else "application/octet-stream"
-        return data, filename, media_type
+        return (
+            data,
+            filename,
+            media_type,
+            result.bytes_downloaded,
+            result.audio_size_bytes,
+            result.download_mode,
+        )
 
 
 @app.post("/import-audio", response_class=Response)
@@ -76,7 +89,7 @@ async def import_audio(body: ImportRequest):
         )
     try:
         loop = asyncio.get_running_loop()
-        data, filename, media_type = await loop.run_in_executor(
+        data, filename, media_type, bytes_downloaded, audio_size, download_mode = await loop.run_in_executor(
             None,
             partial(_run_import, url, body.client_attempted),
         )
@@ -92,8 +105,12 @@ async def import_audio(body: ImportRequest):
     return Response(
         content=data,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            BYTES_DOWNLOADED_HEADER: str(bytes_downloaded),
+            AUDIO_SIZE_HEADER: str(audio_size),
+            DOWNLOAD_MODE_HEADER: download_mode,
+        },
     )
 
 
