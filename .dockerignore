@@ -1,0 +1,9 @@
+__pycache__
+*.pyc
+.env
+.env.*
+test.m4a
+local_test_reel.m4a
+api_test_reel.m4a
+proxy_test_output.m4a
+.git
