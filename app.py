@@ -22,6 +22,7 @@ from proxy_config import proxy_status
 
 BYTES_DOWNLOADED_HEADER = "X-Import-Bytes-Downloaded"
 AUDIO_SIZE_HEADER = "X-Import-Audio-Size-Bytes"
+DOWNLOAD_MODE_HEADER = "X-Import-Download-Mode"
 
 
 @asynccontextmanager
@@ -49,7 +50,7 @@ def _safe_filename(title: str, ext: str) -> str:
     return f"{base}.{ext}"
 
 
-def _run_import(url: str, client_attempted: bool | None = None) -> tuple[bytes, str, str, int, int]:
+def _run_import(url: str, client_attempted: bool | None = None) -> tuple[bytes, str, str, int, int, str]:
     started = time.time()
     with tempfile.TemporaryDirectory() as tmpdir:
         result = import_audio_from_url(url, tmpdir)
@@ -62,7 +63,8 @@ def _run_import(url: str, client_attempted: bool | None = None) -> tuple[bytes, 
         print(
             f"[media-import] strategy={strategy} client_attempted={bool(client_attempted)} "
             f"duration_ms={elapsed_ms} bytes_downloaded={result.bytes_downloaded} "
-            f"audio_size={result.audio_size_bytes} response_bytes={len(data)}",
+            f"audio_size={result.audio_size_bytes} download_mode={result.download_mode} "
+            f"response_bytes={len(data)}",
             flush=True,
         )
         filename = _safe_filename(result.title, result.ext)
@@ -73,6 +75,7 @@ def _run_import(url: str, client_attempted: bool | None = None) -> tuple[bytes, 
             media_type,
             result.bytes_downloaded,
             result.audio_size_bytes,
+            result.download_mode,
         )
 
 
@@ -86,7 +89,7 @@ async def import_audio(body: ImportRequest):
         )
     try:
         loop = asyncio.get_running_loop()
-        data, filename, media_type, bytes_downloaded, audio_size = await loop.run_in_executor(
+        data, filename, media_type, bytes_downloaded, audio_size, download_mode = await loop.run_in_executor(
             None,
             partial(_run_import, url, body.client_attempted),
         )
@@ -106,6 +109,7 @@ async def import_audio(body: ImportRequest):
             "Content-Disposition": f'attachment; filename="{filename}"',
             BYTES_DOWNLOADED_HEADER: str(bytes_downloaded),
             AUDIO_SIZE_HEADER: str(audio_size),
+            DOWNLOAD_MODE_HEADER: download_mode,
         },
     )
 

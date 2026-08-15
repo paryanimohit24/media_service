@@ -27,6 +27,7 @@ class ImportResult:
     ext: str
     bytes_downloaded: int
     audio_size_bytes: int
+    download_mode: str
 
 
 def is_supported_url(url: str) -> bool:
@@ -81,26 +82,49 @@ def allow_direct_fallback() -> bool:
     return _allow()
 
 
+_VIDEO_EXTENSIONS = frozenset(
+    {".mp4", ".webm", ".mkv", ".mov", ".avi", ".flv", ".3gp", ".mpeg", ".mpg"}
+)
+
+
+def _download_mode_from_info(info: dict, downloaded_video: bool) -> str:
+    """Return audio_only or video_audio_processed."""
+    if downloaded_video:
+        return "video_audio_processed"
+
+    vcodec = str(info.get("vcodec") or "").strip().lower()
+    if vcodec and vcodec != "none":
+        return "video_audio_processed"
+
+    if info.get("width") or info.get("height"):
+        return "video_audio_processed"
+
+    ext = str(info.get("ext") or "").strip().lower()
+    if ext in {"mp4", "webm", "mkv", "mov", "avi", "flv", "3gp"}:
+        return "video_audio_processed"
+
+    return "audio_only"
+
+
 class _DownloadTracker:
     def __init__(self) -> None:
         self.bytes_downloaded = 0
-        self._fragment_bytes = 0
+        self.downloaded_video = False
 
     def hook(self, status: dict) -> None:
         state = status.get("status")
-        if state == "downloading":
-            downloaded = status.get("downloaded_bytes")
-            if isinstance(downloaded, int) and downloaded >= 0:
-                self._fragment_bytes = downloaded
-        elif state == "finished":
+        if state == "finished":
             finished_bytes = status.get("total_bytes")
+            filename = status.get("filename")
+            if filename:
+                ext = os.path.splitext(str(filename))[1].lower()
+                if ext in _VIDEO_EXTENSIONS:
+                    self.downloaded_video = True
             if not isinstance(finished_bytes, int) or finished_bytes <= 0:
-                filename = status.get("filename")
                 if filename and os.path.isfile(filename):
                     finished_bytes = os.path.getsize(filename)
             if isinstance(finished_bytes, int) and finished_bytes > 0:
                 self.bytes_downloaded += finished_bytes
-            self._fragment_bytes = 0
 
 
 def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
@@ -160,12 +184,15 @@ def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
         if bytes_downloaded <= 0:
             bytes_downloaded = audio_size
 
+        download_mode = _download_mode_from_info(info, tracker.downloaded_video)
+
         return ImportResult(
             audio_path=audio_path,
             title=title,
             ext=ext if ext != "m4a" else "m4a",
             bytes_downloaded=bytes_downloaded,
             audio_size_bytes=audio_size,
+            download_mode=download_mode,
         )
 
 
@@ -183,7 +210,8 @@ def _import_via_ytdlp_attempts(url: str, tmpdir: str) -> ImportResult:
             print(
                 f"[media-import] yt-dlp success attempt {attempt_index}/{len(attempts)} "
                 f"via {mask_proxy(proxy) or 'direct'} "
-                f"bytes_downloaded={result.bytes_downloaded} audio_size={result.audio_size_bytes}",
+                f"bytes_downloaded={result.bytes_downloaded} audio_size={result.audio_size_bytes} "
+                f"download_mode={result.download_mode}",
                 flush=True,
             )
             return result
