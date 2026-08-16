@@ -19,7 +19,10 @@ def _guess_extension(media_url: str) -> str:
     for ext in (".m4a", ".mp3", ".mp4", ".webm", ".mov"):
         if path.endswith(ext):
             return ext.lstrip(".")
-    if ".mp4" in media_url.lower():
+    lower = media_url.lower()
+    if "mime=audio" in lower or "itag=139" in lower or "itag=140" in lower:
+        return "m4a"
+    if ".mp4" in lower or "videoplayback" in lower:
         return "mp4"
     return "bin"
 
@@ -29,8 +32,28 @@ def is_probably_audio_url(media_url: str) -> bool:
     return any(x in lower for x in (".m4a", ".mp3", "mime=audio", "/audio"))
 
 
-def download_media(media_url: str, dest_path: str, proxy: str | None = None) -> str:
+def _download_headers(media_url: str) -> dict[str, str]:
     headers = {"User-Agent": MOBILE_UA}
+    lower = media_url.lower()
+    if "googlevideo.com" in lower:
+        headers["Referer"] = "https://www.youtube.com/"
+        headers["Origin"] = "https://www.youtube.com"
+    elif "tiktok" in lower or "tiktokcdn" in lower:
+        headers["Referer"] = "https://www.tiktok.com/"
+    elif "cdninstagram" in lower or "instagram" in lower:
+        headers["Referer"] = "https://www.instagram.com/"
+    return headers
+
+
+def download_media(
+    media_url: str,
+    dest_path: str,
+    proxy: str | None = None,
+    referer: str | None = None,
+) -> str:
+    headers = _download_headers(media_url)
+    if referer:
+        headers["Referer"] = referer
     req = urllib.request.Request(media_url, headers=headers)
     if proxy:
         opener = urllib.request.build_opener(
@@ -88,16 +111,23 @@ def extract_audio_to_m4a(input_path: str, output_m4a: str) -> str:
     return output_m4a
 
 
-def media_to_m4a(media_url: str, tmpdir: str, proxy: str | None = None) -> str:
+def media_to_m4a(
+    media_url: str,
+    tmpdir: str,
+    proxy: str | None = None,
+    referer: str | None = None,
+) -> tuple[str, int, str]:
+    """Download media and return (m4a path, bytes downloaded, download_mode)."""
     ext = _guess_extension(media_url)
     media_path = os.path.join(tmpdir, f"media.{ext}")
-    download_media(media_url, media_path, proxy=proxy)
+    download_media(media_url, media_path, proxy=proxy, referer=referer)
+    bytes_downloaded = os.path.getsize(media_path)
+    audio_only = is_probably_audio_url(media_url) or ext in ("m4a", "mp3")
+    download_mode = "audio_only" if audio_only else "video_audio_processed"
 
-    if is_probably_audio_url(media_url) or ext in ("m4a", "mp3"):
-        if ext == "m4a":
-            return media_path
-        out_m4a = os.path.join(tmpdir, "import.m4a")
-        return extract_audio_to_m4a(media_path, out_m4a)
+    if audio_only and ext == "m4a":
+        return media_path, bytes_downloaded, download_mode
 
     out_m4a = os.path.join(tmpdir, "import.m4a")
-    return extract_audio_to_m4a(media_path, out_m4a)
+    result_path = extract_audio_to_m4a(media_path, out_m4a)
+    return result_path, bytes_downloaded, download_mode

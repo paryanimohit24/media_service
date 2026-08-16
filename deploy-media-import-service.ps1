@@ -1,4 +1,4 @@
-# Deploy media_import_service to Cloud Run
+# Deploy media_import_service to Cloud Run (yt-dlp + Geonode residential proxy)
 # Project: music-ai-app-489904 | Region: asia-south1
 
 $ErrorActionPreference = "Stop"
@@ -13,6 +13,15 @@ if ($LASTEXITCODE -ne 0) {
     throw "Docker Desktop is not running. Start it, then re-run."
 }
 
+$HasProxy = $false
+if ($env:GEONODE_PROXY_URL) { $HasProxy = $true }
+if ($env:GEONODE_PROXY_USERNAME -and $env:GEONODE_PROXY_PASSWORD) { $HasProxy = $true }
+if ($env:YT_DLP_PROXY) { $HasProxy = $true }
+
+if (-not $HasProxy) {
+    Write-Warning "No residential proxy set. YouTube/TikTok/Snapchat need GEONODE_PROXY_USERNAME/PASSWORD or GEONODE_PROXY_URL."
+}
+
 Write-Host "Building Docker image..."
 docker build -t $Image .
 if ($LASTEXITCODE -ne 0) { throw "docker build failed" }
@@ -23,15 +32,29 @@ if ($LASTEXITCODE -ne 0) { throw "docker push failed" }
 
 Write-Host "Deploying to Cloud Run [$Service]..."
 
-$EnvVars = "GEONODE_ENABLED=true,GEONODE_ALLOW_DIRECT=false,GEONODE_PROCESSING_MODE=async,GEONODE_PROXY_COUNTRY=US,IMPORT_STRATEGY=ytdlp_first,GEONODE_TRY_EMBED=false,YT_DLP_AUTO_PROXY=false,YT_DLP_PROXY_FALLBACK_ATTEMPTS=0"
+$EnvVars = "GEONODE_ALLOW_DIRECT=false,YT_DLP_AUTO_PROXY=false"
 if ($env:GEONODE_API_KEY) {
-    $EnvVars = "GEONODE_API_KEY=$($env:GEONODE_API_KEY),$EnvVars"
-    Write-Host "GEONODE_API_KEY set (length $($env:GEONODE_API_KEY.Length))"
-} else {
-    Write-Warning "GEONODE_API_KEY not set. Set it before deploy or update Cloud Run env manually."
+    $EnvVars = "GEONODE_API_KEY=$($env:GEONODE_API_KEY),GEONODE_ENABLED=true,$EnvVars"
 }
 if ($env:GEONODE_PROXY_URL) {
     $EnvVars = "$EnvVars,GEONODE_PROXY_URL=$($env:GEONODE_PROXY_URL)"
+}
+if ($env:GEONODE_PROXY_USERNAME) {
+    $EnvVars = "$EnvVars,GEONODE_PROXY_USERNAME=$($env:GEONODE_PROXY_USERNAME)"
+}
+if ($env:GEONODE_PROXY_PASSWORD) {
+    $EnvVars = "$EnvVars,GEONODE_PROXY_PASSWORD=$($env:GEONODE_PROXY_PASSWORD)"
+}
+if ($env:GEONODE_PROXY_HOST) {
+    $EnvVars = "$EnvVars,GEONODE_PROXY_HOST=$($env:GEONODE_PROXY_HOST)"
+}
+if ($env:GEONODE_PROXY_PORT) {
+    $EnvVars = "$EnvVars,GEONODE_PROXY_PORT=$($env:GEONODE_PROXY_PORT)"
+}
+if ($HasProxy) {
+    $EnvVars = "$EnvVars,YT_DLP_PROXY_FALLBACK_ATTEMPTS=0"
+} else {
+    $EnvVars = "$EnvVars,YT_DLP_PROXY_FALLBACK_ATTEMPTS=3"
 }
 
 gcloud run deploy $Service `
@@ -48,10 +71,7 @@ gcloud run deploy $Service `
     --allow-unauthenticated `
     --quiet
 
+if ($LASTEXITCODE -ne 0) { throw "gcloud run deploy failed" }
+
 $Url = gcloud run services describe $Service --region $Region --project $Project --format="value(status.url)"
 Write-Host "Service URL: $Url"
-Write-Host ""
-Write-Host "If backend gets 403 from this service, in GCP Console add:"
-Write-Host "  Principal: song-backend@music-ai-app-489904.iam.gserviceaccount.com"
-Write-Host "  Role: Cloud Run Invoker"
-Write-Host "  on service: media-import-service"
