@@ -1,5 +1,5 @@
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
-yt-dlp[curl-cffi]>=2026.7.4
+yt-dlp[curl-cffi,default]>=2026.7.4
 pydantic==2.10.4
 PySocks==1.7.1
