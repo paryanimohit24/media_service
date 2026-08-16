@@ -318,25 +318,58 @@ def _import_via_innertube_youtube(url: str, tmpdir: str) -> ImportResult | None:
     video_id = youtube_video_id(url)
     if not video_id:
         return None
-    audio_url = fetch_youtube_audio_url(video_id)
-    if not audio_url:
-        return None
-    audio_path, bytes_downloaded, download_mode = media_to_m4a(
-        audio_url,
-        tmpdir,
-        referer=f"https://www.youtube.com/watch?v={video_id}",
-    )
-    audio_size = os.path.getsize(audio_path)
-    if audio_size <= 0:
-        raise RuntimeError("Innertube audio file is empty.")
-    return ImportResult(
-        audio_path=audio_path,
-        title=f"youtube_{video_id}",
-        ext="m4a",
-        bytes_downloaded=bytes_downloaded,
-        audio_size_bytes=audio_size,
-        download_mode=download_mode,
-    )
+
+    proxies = _build_ytdlp_proxies()
+    last_error: Exception | None = None
+    for attempt_index, proxy in enumerate(proxies, start=1):
+        try:
+            audio_url = fetch_youtube_audio_url(video_id, proxy=proxy)
+            if not audio_url:
+                continue
+            attempt_dir = (
+                tmpdir
+                if attempt_index == 1
+                else os.path.join(tmpdir, f"innertube_{attempt_index}")
+            )
+            if attempt_index > 1:
+                os.makedirs(attempt_dir, exist_ok=True)
+
+            audio_path, bytes_downloaded, download_mode = media_to_m4a(
+                audio_url,
+                attempt_dir,
+                proxy=proxy,
+                referer=f"https://www.youtube.com/watch?v={video_id}",
+            )
+            audio_size = os.path.getsize(audio_path)
+            if audio_size <= 0:
+                raise RuntimeError("Innertube audio file is empty.")
+            print(
+                f"[media-import] innertube success via {mask_proxy(proxy) or 'direct'} "
+                f"bytes_downloaded={bytes_downloaded} audio_size={audio_size}",
+                flush=True,
+            )
+            return ImportResult(
+                audio_path=audio_path,
+                title=f"youtube_{video_id}",
+                ext="m4a",
+                bytes_downloaded=bytes_downloaded,
+                audio_size_bytes=audio_size,
+                download_mode=download_mode,
+            )
+        except Exception as e:
+            last_error = e
+            report_proxy_failure(proxy)
+            print(
+                f"[media-import] innertube attempt {attempt_index}/{len(proxies)} failed "
+                f"({mask_proxy(proxy) or 'direct'}): {_format_error(e)}",
+                flush=True,
+            )
+            if attempt_index > 1 and os.path.isdir(attempt_dir):
+                shutil.rmtree(attempt_dir, ignore_errors=True)
+
+    if last_error:
+        print(f"[media-import] innertube all attempts failed: {_format_error(last_error)}", flush=True)
+    return None
 
 
 def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:

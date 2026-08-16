@@ -24,6 +24,12 @@ BYTES_DOWNLOADED_HEADER = "X-Import-Bytes-Downloaded"
 AUDIO_SIZE_HEADER = "X-Import-Audio-Size-Bytes"
 DOWNLOAD_MODE_HEADER = "X-Import-Download-Mode"
 
+_YOUTUBE_BOT_BLOCK_MESSAGE = (
+    "YouTube blocked server download from datacenter IP. "
+    "Set GEONODE_PROXY_USERNAME and GEONODE_PROXY_PASSWORD on media-import-service "
+    "(residential proxy), then redeploy."
+)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -99,10 +105,7 @@ async def import_audio(body: ImportRequest):
         print(f"[media-import] failed for {url}: {e}", flush=True)
         detail = str(e).strip() or "Import failed."
         if "not a bot" in detail.lower() or "sign in to confirm" in detail.lower():
-            detail = (
-                "YouTube blocked server download. Use the latest app build — "
-                "it imports YouTube on your phone network first."
-            )
+            detail = _YOUTUBE_BOT_BLOCK_MESSAGE
         raise HTTPException(status_code=502, detail=detail) from e
 
     return Response(
