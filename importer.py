@@ -1,14 +1,30 @@
-"""Download audio from supported social URLs via yt-dlp (optional Geonode proxy)."""
+"""Download audio from supported social URLs.
+
+Instagram reels: yt-dlp direct (works from datacenter IPs).
+YouTube / TikTok / Snapchat: page HTML extract (Geonode Scraper API or direct fetch),
+then yt-dlp fallback.
+"""
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 
 import yt_dlp
 
-from geonode_config import geonode_allow_direct, geonode_max_attempts, geonode_proxy_url
-from page_parser import detect_platform
+from geonode_client import GeonodeError, extract_html
+from geonode_config import (
+    geonode_allow_direct,
+    geonode_enabled,
+    geonode_max_attempts,
+    geonode_proxy_url,
+    mobile_user_agent,
+)
+from media_download import media_to_m4a
+from page_parser import detect_platform, parse_media_url, platform_fetch_urls
 from proxy_config import (
     get_manual_proxy,
     get_proxy_url,
@@ -44,8 +60,14 @@ def _format_error(exc: Exception) -> str:
     return type(exc).__name__
 
 
-def _platform_needs_proxy(platform: str) -> bool:
-    return platform in ("youtube", "tiktok", "snapchat")
+def allow_direct_fallback() -> bool:
+    from proxy_config import allow_direct_fallback as _allow
+
+    return _allow()
+
+
+def _platform_page_extract_platforms() -> frozenset[str]:
+    return frozenset({"youtube", "tiktok", "snapchat"})
 
 
 def _build_ytdlp_proxies(platform: str) -> list[str | None]:
@@ -60,13 +82,19 @@ def _build_ytdlp_proxies(platform: str) -> list[str | None]:
             attempts.append(proxy)
 
     geonode_proxy = geonode_proxy_url()
-    if geonode_proxy:
+    instagram = platform == "instagram"
+
+    if instagram:
+        add(None)
+        if geonode_proxy:
+            for _ in range(geonode_max_attempts()):
+                add(geonode_proxy)
+    elif geonode_proxy:
         for _ in range(geonode_max_attempts()):
             add(geonode_proxy)
         if geonode_allow_direct():
             add(None)
-    elif _platform_needs_proxy(platform):
-        # YouTube / TikTok / Snapchat rarely work from datacenter IPs.
+    else:
         if manual_proxy_configured():
             add(get_manual_proxy())
         if use_free_proxy_pool():
@@ -74,12 +102,10 @@ def _build_ytdlp_proxies(platform: str) -> list[str | None]:
                 add(get_proxy_url())
         if allow_direct_fallback():
             add(None)
-    else:
-        add(None)
 
     if manual_proxy_configured():
         add(get_manual_proxy())
-    if use_free_proxy_pool() and not _platform_needs_proxy(platform):
+    if use_free_proxy_pool() and instagram:
         for _ in range(max_attempts()):
             add(get_proxy_url())
 
@@ -89,19 +115,12 @@ def _build_ytdlp_proxies(platform: str) -> list[str | None]:
     return attempts or [None]
 
 
-def allow_direct_fallback() -> bool:
-    from proxy_config import allow_direct_fallback as _allow
-
-    return _allow()
-
-
 _VIDEO_EXTENSIONS = frozenset(
     {".mp4", ".webm", ".mkv", ".mov", ".avi", ".flv", ".3gp", ".mpeg", ".mpg"}
 )
 
 
 def _download_mode_from_info(info: dict, downloaded_video: bool) -> str:
-    """Return audio_only or video_audio_processed."""
     if downloaded_video:
         return "video_audio_processed"
 
@@ -147,8 +166,6 @@ def _build_ydl_opts(
     tracker: _DownloadTracker,
     variant: int = 0,
 ) -> dict:
-    from geonode_config import mobile_user_agent
-
     ua = mobile_user_agent()
     out_template = os.path.join(tmpdir, "import.%(ext)s")
     socket_timeout = 90 if proxy else 60
@@ -252,13 +269,6 @@ def _import_via_ytdlp(
 
 
 def _import_via_ytdlp_attempts(url: str, tmpdir: str, platform: str) -> ImportResult:
-    if _platform_needs_proxy(platform) and not geonode_proxy_url() and not manual_proxy_configured():
-        if not use_free_proxy_pool():
-            raise RuntimeError(
-                f"{platform.capitalize()} links need a residential proxy on the server. "
-                "Set GEONODE_PROXY_URL or GEONODE_PROXY_USERNAME/PASSWORD on media-import-service."
-            )
-
     attempts = _build_ytdlp_proxies(platform)
     last_error: Exception | None = None
     variant = 0
@@ -302,6 +312,136 @@ def _import_via_ytdlp_attempts(url: str, tmpdir: str, platform: str) -> ImportRe
     )
 
 
+def _title_from_url(url: str, platform: str) -> str:
+    slug = re.sub(r"[^\w-]", "_", url.rsplit("/", 1)[-1]).strip("_")
+    if not slug:
+        slug = platform
+    return f"{platform}_{slug}"[:80]
+
+
+def _page_fetch_headers(platform: str) -> dict[str, str]:
+    ua = mobile_user_agent()
+    headers = {"User-Agent": ua, "Accept": "text/html,application/xhtml+xml"}
+    if platform == "tiktok":
+        headers["Referer"] = "https://www.tiktok.com/"
+    elif platform == "youtube":
+        headers["Referer"] = "https://www.youtube.com/"
+    return headers
+
+
+def _fetch_page_html_direct(page_url: str, platform: str, proxy: str | None = None) -> str:
+    headers = _page_fetch_headers(platform)
+    req = urllib.request.Request(page_url, headers=headers)
+    try:
+        if proxy:
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+            )
+            with opener.open(req, timeout=45) as resp:
+                body = resp.read()
+        else:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                body = resp.read()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Page fetch failed (HTTP {e.code}).") from e
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise RuntimeError(f"Page fetch failed: {e}") from e
+
+    if not body:
+        raise RuntimeError("Page fetch returned empty body.")
+    return body.decode("utf-8", errors="replace")
+
+
+def _fetch_page_html(
+    page_url: str,
+    platform: str,
+    proxy: str | None = None,
+) -> tuple[str, str]:
+    """Return (html, source) where source is geonode_scraper or direct_fetch."""
+    if geonode_enabled():
+        html = extract_html(page_url)
+        return html, "geonode_scraper"
+
+    via = mask_proxy(proxy) or "direct"
+    print(f"[media-import] direct page fetch ({via}) {page_url}", flush=True)
+    return _fetch_page_html_direct(page_url, platform, proxy=proxy), "direct_fetch"
+
+
+def _import_via_page_extract(url: str, tmpdir: str, platform: str) -> ImportResult:
+    fetch_urls = platform_fetch_urls(url, platform)
+    page_proxies: list[str | None] = [None]
+    if geonode_proxy_url():
+        page_proxies = [geonode_proxy_url()]
+    elif manual_proxy_configured():
+        page_proxies = [get_manual_proxy(), None]
+
+    media_proxies: list[str | None] = []
+    if geonode_proxy_url():
+        media_proxies.append(geonode_proxy_url())
+    if manual_proxy_configured():
+        media_proxies.append(get_manual_proxy())
+    media_proxies.append(None)
+
+    last_error: Exception | None = None
+
+    for fetch_url in fetch_urls:
+        for page_proxy in page_proxies:
+            try:
+                html, source = _fetch_page_html(fetch_url, platform, proxy=page_proxy)
+                media_url = parse_media_url(html, platform=platform)
+                if not media_url:
+                    raise RuntimeError("Could not find media URL in page HTML.")
+
+                print(
+                    f"[media-import] page extract resolved media for {platform} via {source}",
+                    flush=True,
+                )
+
+                for media_proxy in media_proxies:
+                    try:
+                        audio_path, bytes_downloaded, download_mode = media_to_m4a(
+                            media_url,
+                            tmpdir,
+                            proxy=media_proxy,
+                            referer=fetch_url,
+                        )
+                        audio_size = os.path.getsize(audio_path)
+                        if audio_size <= 0:
+                            raise RuntimeError("Extracted audio file is empty.")
+
+                        title = _title_from_url(url, platform)
+                        return ImportResult(
+                            audio_path=audio_path,
+                            title=title,
+                            ext="m4a",
+                            bytes_downloaded=bytes_downloaded,
+                            audio_size_bytes=audio_size,
+                            download_mode=download_mode,
+                        )
+                    except Exception as download_err:
+                        last_error = download_err
+                        print(
+                            f"[media-import] media download failed "
+                            f"({mask_proxy(media_proxy) or 'direct'}): "
+                            f"{_format_error(download_err)}",
+                            flush=True,
+                        )
+                raise RuntimeError(
+                    _format_error(last_error) if last_error else "Media download failed."
+                )
+            except (GeonodeError, Exception) as e:
+                last_error = e
+                print(
+                    f"[media-import] page extract failed for {fetch_url} "
+                    f"({mask_proxy(page_proxy) or 'direct'}): {_format_error(e)}",
+                    flush=True,
+                )
+
+    raise RuntimeError(
+        _format_error(last_error) if last_error else "Page extract did not return media."
+    )
+
+
 def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
     platform = detect_platform(url)
     if not platform:
@@ -309,5 +449,41 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
             "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat public links."
         )
 
-    print(f"[media-import] strategy=ytdlp_only platform={platform}", flush=True)
+    if platform == "instagram":
+        print(f"[media-import] strategy=instagram_ytdlp platform={platform}", flush=True)
+        return _import_via_ytdlp_attempts(url, tmpdir, platform)
+
+    if platform in _platform_page_extract_platforms():
+        print(
+            f"[media-import] strategy=page_extract_then_ytdlp platform={platform} "
+            f"geonode_scraper={geonode_enabled()}",
+            flush=True,
+        )
+        try:
+            result = _import_via_page_extract(url, tmpdir, platform)
+            print(f"[media-import] success via page_extract ({platform})", flush=True)
+            return result
+        except Exception as e:
+            print(
+                f"[media-import] page_extract failed ({platform}): {_format_error(e)}",
+                flush=True,
+            )
+            try:
+                result = _import_via_ytdlp_attempts(url, tmpdir, platform)
+                print(f"[media-import] success via yt-dlp fallback ({platform})", flush=True)
+                return result
+            except Exception as ytdlp_err:
+                combined = (
+                    f"Page extract: {_format_error(e)}. "
+                    f"yt-dlp fallback: {_format_error(ytdlp_err)}."
+                )
+                if not geonode_enabled() and not geonode_proxy_url():
+                    combined += (
+                        " Set GEONODE_API_KEY for page scraping (YouTube/TikTok). "
+                        "YouTube CDN URLs are IP-bound — add GEONODE_PROXY_USERNAME/PASSWORD "
+                        "when you have residential proxy for reliable YouTube downloads."
+                    )
+                raise RuntimeError(combined) from ytdlp_err
+
+    print(f"[media-import] strategy=ytdlp platform={platform}", flush=True)
     return _import_via_ytdlp_attempts(url, tmpdir, platform)
