@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, ConfigDict
 
-from importer import IpBlockError, import_audio_from_url, is_supported_url
+from importer import import_audio_from_url, is_supported_url
 from proxy_config import proxy_status
 
 BYTES_DOWNLOADED_HEADER = "X-Import-Bytes-Downloaded"
@@ -95,15 +95,6 @@ async def import_audio(body: ImportRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except IpBlockError as e:
-        print(f"[media-import] ip-block for {url}: {e}", flush=True)
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error": str(e),
-                "ipBlocked": True,
-            },
-        ) from e
     except Exception as e:
         print(f"[media-import] failed for {url}: {e}", flush=True)
         raise HTTPException(

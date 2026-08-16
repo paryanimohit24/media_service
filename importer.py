@@ -30,10 +30,6 @@ class ImportResult:
     download_mode: str
 
 
-class IpBlockError(Exception):
-    """Platform rate-limit / IP block — client should cool down, not retry immediately."""
-
-
 def is_supported_url(url: str) -> bool:
     return detect_platform(url) is not None
 
@@ -46,28 +42,6 @@ def _format_error(exc: Exception) -> str:
     if text:
         return text
     return type(exc).__name__
-
-
-def _is_ip_or_rate_block(exc: Exception) -> bool:
-    text = _format_error(exc).lower()
-    needles = (
-        "http error 403",
-        "403 forbidden",
-        "status code: 403",
-        "http error 429",
-        "429 too many",
-        "too many requests",
-        "rate limit",
-        "ratelimit",
-        "login required",
-        "sign in to confirm",
-        "confirm you're not a bot",
-        "this action is blocked",
-        "temporarily unavailable",
-        "forbidden",
-        "blocked",
-    )
-    return any(n in text for n in needles)
 
 
 def _build_ytdlp_proxies() -> list[str | None]:
@@ -281,9 +255,10 @@ def _import_via_ytdlp_attempts(url: str, tmpdir: str, platform: str) -> ImportRe
             if attempt_index > 1 and os.path.isdir(attempt_dir):
                 shutil.rmtree(attempt_dir, ignore_errors=True)
 
-    if last_error and _is_ip_or_rate_block(last_error):
-        raise IpBlockError(
-            "Too many requests from this network. Please wait before importing links again."
+    if last_error:
+        print(
+            f"[media-import] yt-dlp all attempts failed ({platform}): {_format_error(last_error)}",
+            flush=True,
         )
 
     raise RuntimeError(
