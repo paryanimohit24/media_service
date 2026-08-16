@@ -30,6 +30,10 @@ class ImportResult:
     download_mode: str
 
 
+class IpBlockError(Exception):
+    """Platform rate-limit / IP block — client should cool down, not retry immediately."""
+
+
 def is_supported_url(url: str) -> bool:
     return detect_platform(url) is not None
 
@@ -42,6 +46,28 @@ def _format_error(exc: Exception) -> str:
     if text:
         return text
     return type(exc).__name__
+
+
+def _is_ip_or_rate_block(exc: Exception) -> bool:
+    text = _format_error(exc).lower()
+    needles = (
+        "http error 403",
+        "403 forbidden",
+        "status code: 403",
+        "http error 429",
+        "429 too many",
+        "too many requests",
+        "rate limit",
+        "ratelimit",
+        "login required",
+        "sign in to confirm",
+        "confirm you're not a bot",
+        "this action is blocked",
+        "temporarily unavailable",
+        "forbidden",
+        "blocked",
+    )
+    return any(n in text for n in needles)
 
 
 def _build_ytdlp_proxies() -> list[str | None]:
@@ -127,17 +153,25 @@ class _DownloadTracker:
                 self.bytes_downloaded += finished_bytes
 
 
-def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
-    tracker = _DownloadTracker()
+def _build_ydl_opts(
+    platform: str,
+    tmpdir: str,
+    proxy: str | None,
+    tracker: _DownloadTracker,
+) -> dict:
+    from geonode_config import mobile_user_agent
+
+    ua = mobile_user_agent()
     out_template = os.path.join(tmpdir, "import.%(ext)s")
-    socket_timeout = 45 if proxy else 25
-    ydl_opts = {
+    socket_timeout = 90 if proxy else 60
+    opts: dict = {
         "format": "bestaudio/best",
         "outtmpl": out_template,
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
         "socket_timeout": socket_timeout,
+        "user_agent": ua,
         "progress_hooks": [tracker.hook],
         "postprocessors": [
             {
@@ -148,15 +182,36 @@ def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
         ],
     }
 
+    if platform == "youtube":
+        opts["extractor_args"] = {
+            "youtube": {"player_client": ["android", "ios", "web"]},
+        }
+    elif platform == "tiktok":
+        opts["http_headers"] = {
+            "User-Agent": ua,
+            "Referer": "https://www.tiktok.com/",
+        }
+    elif platform in ("instagram", "snapchat"):
+        opts["http_headers"] = {"User-Agent": ua}
+
     if proxy:
-        ydl_opts["proxy"] = proxy
-        print(f"[media-import] yt-dlp via {mask_proxy(proxy)}", flush=True)
-    else:
-        print("[media-import] yt-dlp direct", flush=True)
+        opts["proxy"] = proxy
 
     cookies_file = (os.environ.get("YT_DLP_COOKIES_FILE") or "").strip()
     if cookies_file and os.path.isfile(cookies_file):
-        ydl_opts["cookiefile"] = cookies_file
+        opts["cookiefile"] = cookies_file
+
+    return opts
+
+
+def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None, platform: str) -> ImportResult:
+    tracker = _DownloadTracker()
+    ydl_opts = _build_ydl_opts(platform, tmpdir, proxy, tracker)
+
+    if proxy:
+        print(f"[media-import] yt-dlp via {mask_proxy(proxy)}", flush=True)
+    else:
+        print("[media-import] yt-dlp direct", flush=True)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -196,7 +251,7 @@ def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
         )
 
 
-def _import_via_ytdlp_attempts(url: str, tmpdir: str) -> ImportResult:
+def _import_via_ytdlp_attempts(url: str, tmpdir: str, platform: str) -> ImportResult:
     attempts = _build_ytdlp_proxies()
     last_error: Exception | None = None
 
@@ -206,7 +261,7 @@ def _import_via_ytdlp_attempts(url: str, tmpdir: str) -> ImportResult:
             os.makedirs(attempt_dir, exist_ok=True)
 
         try:
-            result = _import_via_ytdlp(url, attempt_dir, proxy)
+            result = _import_via_ytdlp(url, attempt_dir, proxy, platform)
             print(
                 f"[media-import] yt-dlp success attempt {attempt_index}/{len(attempts)} "
                 f"via {mask_proxy(proxy) or 'direct'} "
@@ -226,6 +281,11 @@ def _import_via_ytdlp_attempts(url: str, tmpdir: str) -> ImportResult:
             if attempt_index > 1 and os.path.isdir(attempt_dir):
                 shutil.rmtree(attempt_dir, ignore_errors=True)
 
+    if last_error and _is_ip_or_rate_block(last_error):
+        raise IpBlockError(
+            "Too many requests from this network. Please wait before importing links again."
+        )
+
     raise RuntimeError(
         _format_error(last_error) if last_error else "All yt-dlp attempts failed."
     )
@@ -239,4 +299,4 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
         )
 
     print(f"[media-import] strategy=ytdlp_only platform={platform}", flush=True)
-    return _import_via_ytdlp_attempts(url, tmpdir)
+    return _import_via_ytdlp_attempts(url, tmpdir, platform)
