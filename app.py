@@ -97,10 +97,13 @@ async def import_audio(body: ImportRequest):
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[media-import] failed for {url}: {e}", flush=True)
-        raise HTTPException(
-            status_code=502,
-            detail="Could not download audio from this link. It may be private or unavailable.",
-        ) from e
+        detail = str(e).strip() or "Import failed."
+        if "not a bot" in detail.lower() or "sign in to confirm" in detail.lower():
+            detail = (
+                "YouTube blocked server download. Use the latest app build — "
+                "it imports YouTube on your phone network first."
+            )
+        raise HTTPException(status_code=502, detail=detail) from e
 
     return Response(
         content=data,

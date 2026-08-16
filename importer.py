@@ -8,7 +8,9 @@ from dataclasses import dataclass
 import yt_dlp
 
 from geonode_config import geonode_allow_direct, geonode_max_attempts, geonode_proxy_url, mobile_user_agent
+from media_download import media_to_m4a
 from page_parser import detect_platform
+from youtube_innertube import fetch_youtube_audio_url, youtube_video_id
 from proxy_config import (
     get_manual_proxy,
     get_proxy_url,
@@ -312,12 +314,47 @@ def _import_via_ytdlp_attempts(url: str, tmpdir: str, platform: str) -> ImportRe
     )
 
 
+def _import_via_innertube_youtube(url: str, tmpdir: str) -> ImportResult | None:
+    video_id = youtube_video_id(url)
+    if not video_id:
+        return None
+    audio_url = fetch_youtube_audio_url(video_id)
+    if not audio_url:
+        return None
+    audio_path, bytes_downloaded, download_mode = media_to_m4a(
+        audio_url,
+        tmpdir,
+        referer=f"https://www.youtube.com/watch?v={video_id}",
+    )
+    audio_size = os.path.getsize(audio_path)
+    if audio_size <= 0:
+        raise RuntimeError("Innertube audio file is empty.")
+    return ImportResult(
+        audio_path=audio_path,
+        title=f"youtube_{video_id}",
+        ext="m4a",
+        bytes_downloaded=bytes_downloaded,
+        audio_size_bytes=audio_size,
+        download_mode=download_mode,
+    )
+
+
 def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
     platform = detect_platform(url)
     if not platform:
         raise ValueError(
             "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat public links."
         )
+
+    if platform == "youtube":
+        print(f"[media-import] strategy=innertube_then_ytdlp platform={platform}", flush=True)
+        try:
+            innertube_result = _import_via_innertube_youtube(url, tmpdir)
+            if innertube_result is not None:
+                print("[media-import] success via youtube innertube", flush=True)
+                return innertube_result
+        except Exception as e:
+            print(f"[media-import] innertube failed: {_format_error(e)}", flush=True)
 
     print(f"[media-import] strategy=ytdlp_direct platform={platform}", flush=True)
     return _import_via_ytdlp_attempts(url, tmpdir, platform)
