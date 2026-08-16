@@ -1,7 +1,7 @@
 """
 FastAPI service: import audio from supported social URLs.
 POST /import-audio  { "url": "https://..." }
-Instagram: yt-dlp direct. YouTube/TikTok/Snapchat: page extract (Geonode Scraper API) + yt-dlp fallback.
+All platforms: yt-dlp direct first (optional residential proxy when configured).
 """
 from __future__ import annotations
 

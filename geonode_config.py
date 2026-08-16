@@ -102,7 +102,7 @@ def mobile_user_agent() -> str:
 
 def geonode_status() -> dict:
     return {
-        "import_strategy": "instagram_ytdlp_others_page_extract",
+        "import_strategy": "ytdlp_direct",
         "geonode_scraper_enabled": geonode_enabled(),
         "geonode_api_key_set": bool(geonode_api_key()),
         "geonode_allow_direct": geonode_allow_direct(),
