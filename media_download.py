@@ -29,8 +29,15 @@ def is_probably_audio_url(media_url: str) -> bool:
     return any(x in lower for x in (".m4a", ".mp3", "mime=audio", "/audio"))
 
 
-def download_media(media_url: str, dest_path: str, proxy: str | None = None) -> str:
+def download_media(
+    media_url: str,
+    dest_path: str,
+    proxy: str | None = None,
+    referer: str | None = None,
+) -> str:
     headers = {"User-Agent": MOBILE_UA}
+    if referer:
+        headers["Referer"] = referer
     req = urllib.request.Request(media_url, headers=headers)
     if proxy:
         opener = urllib.request.build_opener(
@@ -88,10 +95,15 @@ def extract_audio_to_m4a(input_path: str, output_m4a: str) -> str:
     return output_m4a
 
 
-def media_to_m4a(media_url: str, tmpdir: str, proxy: str | None = None) -> str:
+def media_to_m4a(
+    media_url: str,
+    tmpdir: str,
+    proxy: str | None = None,
+    referer: str | None = None,
+) -> str:
     ext = _guess_extension(media_url)
     media_path = os.path.join(tmpdir, f"media.{ext}")
-    download_media(media_url, media_path, proxy=proxy)
+    download_media(media_url, media_path, proxy=proxy, referer=referer)
 
     if is_probably_audio_url(media_url) or ext in ("m4a", "mp3"):
         if ext == "m4a":

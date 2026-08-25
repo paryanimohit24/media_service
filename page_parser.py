@@ -24,12 +24,23 @@ _JSON_AUDIO_URL = re.compile(r'"audio_url"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _JSON_VIDEO_URL = re.compile(r'"video_url"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _TIKTOK_PLAY = re.compile(r'"playAddr"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _TIKTOK_DOWNLOAD = re.compile(r'"downloadAddr"\s*:\s*"([^"]+)"', re.IGNORECASE)
+_TIKTOK_PLAY_API = re.compile(r'"playApi"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _CONTENT_URL = re.compile(r'"contentUrl"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _SNAPCHAT_MEDIA = re.compile(r'"mediaUrl"\s*:\s*"([^"]+)"', re.IGNORECASE)
+_FB_SD_SRC = re.compile(r'"browser_native_sd_url"\s*:\s*"([^"]+)"', re.IGNORECASE)
+_FB_HD_SRC = re.compile(r'"browser_native_hd_url"\s*:\s*"([^"]+)"', re.IGNORECASE)
 
 _INSTAGRAM_SHORTCODE = re.compile(
     r"instagram\.com/(?:reel|reels|p|tv)/([\w-]+)",
     re.IGNORECASE,
+)
+
+_CDN_HOST_MARKERS = (
+    "cdninstagram.com",
+    "fbcdn.net",
+    "tiktokcdn.com",
+    "tiktokv.com",
+    "tiktokcdn-us.com",
 )
 
 
@@ -63,6 +74,9 @@ def parse_media_url(html: str, platform: str | None = None) -> str | None:
         _JSON_VIDEO_URL,
         _TIKTOK_PLAY,
         _TIKTOK_DOWNLOAD,
+        _TIKTOK_PLAY_API,
+        _FB_HD_SRC,
+        _FB_SD_SRC,
         _CONTENT_URL,
         _SNAPCHAT_MEDIA,
     ]
@@ -124,10 +138,46 @@ def detect_platform(url: str) -> str | None:
         if path.lower().startswith("/watch"):
             return "youtube"
 
-    if host.endswith("tiktok.com") or host == "vm.tiktok.com":
+    if host.endswith("tiktok.com") or host in ("vm.tiktok.com", "vt.tiktok.com"):
         return "tiktok"
 
     if host.endswith("snapchat.com"):
         return "snapchat"
 
+    if host in ("fb.watch", "www.fb.watch"):
+        return "facebook"
+
+    if host.endswith("facebook.com") or host.endswith("fb.com"):
+        if re.match(
+            r"^/(watch|reel|reels|videos|share|r|video)(/|$)",
+            path,
+            re.IGNORECASE,
+        ):
+            return "facebook"
+        if "/watch" in path.lower() or "/reel" in path.lower() or "/videos/" in path.lower():
+            return "facebook"
+
+    return None
+
+
+def is_direct_cdn_media_url(url: str) -> bool:
+    """True when the URL is already a CDN media file (e.g. scontent*.cdninstagram.com)."""
+    raw = (url or "").strip()
+    if not raw.startswith(("http://", "https://")):
+        return False
+    try:
+        host = (urlparse(raw).hostname or "").lower()
+    except Exception:
+        return False
+    return any(marker in host for marker in _CDN_HOST_MARKERS)
+
+
+def cdn_platform_hint(url: str) -> str | None:
+    host = (urlparse(url).hostname or "").lower()
+    if "cdninstagram" in host:
+        return "instagram"
+    if "fbcdn" in host:
+        return "facebook"
+    if "tiktok" in host:
+        return "tiktok"
     return None

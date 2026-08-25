@@ -16,7 +16,13 @@ from geonode_config import (
     geonode_proxy_url,
 )
 from media_download import media_to_m4a
-from page_parser import detect_platform, instagram_fetch_urls, parse_media_url
+from page_parser import (
+    cdn_platform_hint,
+    detect_platform,
+    is_direct_cdn_media_url,
+    instagram_fetch_urls,
+    parse_media_url,
+)
 from proxy_config import (
     get_manual_proxy,
     get_proxy_url,
@@ -36,7 +42,8 @@ class ImportResult:
 
 
 def is_supported_url(url: str) -> bool:
-    return detect_platform(url) is not None
+    trimmed = (url or "").strip()
+    return is_direct_cdn_media_url(trimmed) or detect_platform(trimmed) is not None
 
 
 def _format_error(exc: Exception) -> str:
@@ -84,8 +91,40 @@ def _build_ytdlp_proxies() -> list[str | None]:
     return attempts or [None]
 
 
-def geonode_allow_direct_fallback() -> bool:
-    return geonode_allow_direct()
+def _cdn_download_proxy() -> str | None:
+    """Residential proxy for CDN fetches (TikTok/Facebook/Instagram CDN often block datacenter IP)."""
+    proxy = geonode_proxy_url()
+    if proxy:
+        return proxy
+    if manual_proxy_configured():
+        return get_manual_proxy()
+    return None
+
+
+def _referer_for_platform(platform: str, page_url: str) -> str | None:
+    if platform == "tiktok":
+        return "https://www.tiktok.com/"
+    if platform == "facebook":
+        return "https://www.facebook.com/"
+    if platform == "instagram":
+        return "https://www.instagram.com/"
+    if page_url.startswith("http"):
+        return page_url
+    return None
+
+
+def _import_direct_cdn(url: str, tmpdir: str) -> ImportResult:
+    platform = cdn_platform_hint(url) or "cdn"
+    proxy = _cdn_download_proxy()
+    referer = _referer_for_platform(platform, url)
+    print(
+        f"[media-import] direct CDN download ({platform}) via "
+        f"{mask_proxy(proxy) or 'direct'}",
+        flush=True,
+    )
+    audio_path = media_to_m4a(url, tmpdir, proxy=proxy, referer=referer)
+    title = _title_from_url(url, platform)
+    return ImportResult(audio_path=audio_path, title=title, ext="m4a")
 
 
 def _import_via_geonode_scrape(url: str, tmpdir: str, platform: str) -> ImportResult:
@@ -103,7 +142,12 @@ def _import_via_geonode_scrape(url: str, tmpdir: str, platform: str) -> ImportRe
                 f"[media-import] geonode scrape resolved media for {platform}",
                 flush=True,
             )
-            audio_path = media_to_m4a(media_url, tmpdir, proxy=None)
+            audio_path = media_to_m4a(
+                media_url,
+                tmpdir,
+                proxy=_cdn_download_proxy(),
+                referer=_referer_for_platform(platform, fetch_url),
+            )
             title = _title_from_url(url, platform)
             return ImportResult(audio_path=audio_path, title=title, ext="m4a")
         except (GeonodeError, Exception) as e:
@@ -176,16 +220,29 @@ def _import_via_ytdlp(url: str, tmpdir: str, proxy: str | None) -> ImportResult:
 
 
 def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
-    platform = detect_platform(url)
+    trimmed = url.strip()
+
+    # Direct CDN media URL (e.g. scontent*.cdninstagram.com from scrape or share)
+    if is_direct_cdn_media_url(trimmed):
+        try:
+            result = _import_direct_cdn(trimmed, tmpdir)
+            print("[media-import] success via direct-cdn", flush=True)
+            return result
+        except Exception as e:
+            print(f"[media-import] direct-cdn failed: {_format_error(e)}", flush=True)
+            raise
+
+    platform = detect_platform(trimmed)
     if not platform:
         raise ValueError(
-            "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat public links."
+            "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat, "
+            "Facebook public links, and direct CDN media URLs."
         )
 
     # 1) Geonode Scraper API (residential proxy page fetch → parse → CDN download)
     if geonode_enabled():
         try:
-            result = _import_via_geonode_scrape(url, tmpdir, platform)
+            result = _import_via_geonode_scrape(trimmed, tmpdir, platform)
             print(f"[media-import] success via geonode-scrape ({platform})", flush=True)
             return result
         except Exception as e:
@@ -204,7 +261,7 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
             os.makedirs(attempt_dir, exist_ok=True)
 
         try:
-            result = _import_via_ytdlp(url, attempt_dir, proxy)
+            result = _import_via_ytdlp(trimmed, attempt_dir, proxy)
             print(
                 f"[media-import] yt-dlp success attempt {attempt_index}/{len(attempts)} "
                 f"via {mask_proxy(proxy) or 'direct'}",
