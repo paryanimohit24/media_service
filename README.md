@@ -1,6 +1,6 @@
 # Media URL Import Service
 
-Downloads audio from **public social URLs** using **Geonode Scraper API** (residential proxies) + `yt-dlp` + `ffmpeg`.
+Downloads audio from **public social URLs** using **yt-dlp** + **ffmpeg**.
 
 ## Supported platforms
 
@@ -11,42 +11,32 @@ Downloads audio from **public social URLs** using **Geonode Scraper API** (resid
 | TikTok | `https://www.tiktok.com/@user/video/...`, `vm.tiktok.com/...` |
 | Snapchat | `https://www.snapchat.com/t/...`, `story.snapchat.com/...` |
 
-## Import strategy (2026-08)
+## Import strategy
 
-1. **Flutter app (user IP)** — optional client-first for Instagram reels.
-2. **Server** — Geonode Scraper API fetches page HTML via residential proxy, parses media URL, downloads CDN media, FFmpeg → m4a.
-3. **yt-dlp fallback** — through Geonode HTTP proxy (`GEONODE_PROXY_URL`) or manual `YT_DLP_PROXY` when scrape parse fails.
-
-When `GEONODE_API_KEY` is set, the server **does not** use datacenter IP directly (`GEONODE_ALLOW_DIRECT=false` by default). Free public proxy pool is disabled.
+1. **Flutter app (user IP)** — Instagram reels download on the phone network first.
+2. **Server fallback** — yt-dlp direct from Cloud Run IP (optional `YT_DLP_PROXY` if blocked).
 
 ## Env (Cloud Run)
 
 ```env
-GEONODE_API_KEY=your-scraper-api-key
-GEONODE_ENABLED=true
-GEONODE_ALLOW_DIRECT=false
-GEONODE_PROCESSING_MODE=async
-GEONODE_PROXY_COUNTRY=US
-```
-
-For YouTube/TikTok yt-dlp fallback, add proxy dashboard credentials:
-
-```env
-GEONODE_PROXY_URL=http://username:password@proxy.geonode.io:9000
+YT_DLP_AUTO_PROXY=false
+YT_DLP_PROXY_FALLBACK_ATTEMPTS=0
+# Optional:
+# YT_DLP_PROXY=http://user:pass@host:port
+# YT_DLP_COOKIES_FILE=/path/to/cookies.txt
 ```
 
 ## Local run
 
 ```bash
 cd media_service
-cp .env.example .env   # set GEONODE_API_KEY
+cp .env.example .env
 pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8001
 ```
 
 ```bash
 python test_import.py "https://www.instagram.com/reel/XXXX/" --out test.m4a
-python test_import.py "https://www.youtube.com/watch?v=XXXX" --out test.m4a
 ```
 
 ## Spring backend
@@ -58,7 +48,6 @@ url-import.service.url=http://localhost:8001
 
 ## Honest limits
 
-- Geonode Scraper API charges per extraction request.
-- Instagram HTML changes may require parser updates.
-- YouTube/TikTok often need `GEONODE_PROXY_URL` for yt-dlp fallback (separate proxy credentials from Scraper API key).
+- Instagram reels should use the **phone client path** (user IP) — server datacenter IP may fail.
+- YouTube/TikTok may block datacenter IPs without optional `YT_DLP_PROXY`.
 - Instagram ToS / Play Store policy risk — feature behind `kEnableReelUrlImport`.

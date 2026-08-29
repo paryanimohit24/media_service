@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import yt_dlp
 
-from geonode_config import geonode_allow_direct, geonode_max_attempts, geonode_proxy_url, mobile_user_agent
+from http_headers import mobile_user_agent
 from media_download import media_to_m4a
 from page_parser import detect_platform
 from youtube_innertube import fetch_youtube_audio_url, youtube_video_id
@@ -78,7 +78,7 @@ def _variant_count(platform: str) -> int:
 
 
 def _build_ytdlp_proxies() -> list[str | None]:
-    """Proxy attempt order: direct first, then optional Geonode/manual/free proxies."""
+    """Proxy attempt order: direct first, then optional manual/free proxies."""
     attempts: list[str | None] = []
     seen: set[str | None] = set()
 
@@ -89,13 +89,6 @@ def _build_ytdlp_proxies() -> list[str | None]:
             attempts.append(proxy)
 
     add(None)
-
-    geonode_proxy = geonode_proxy_url()
-    if geonode_proxy:
-        for _ in range(geonode_max_attempts()):
-            add(geonode_proxy)
-        if geonode_allow_direct() and None not in seen:
-            add(None)
 
     if manual_proxy_configured():
         add(get_manual_proxy())

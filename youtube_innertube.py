@@ -6,7 +6,7 @@ import re
 import urllib.error
 import urllib.request
 
-from geonode_config import mobile_user_agent
+from http_headers import mobile_user_agent
 
 _INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
 _PLAYER_URL = f"https://www.youtube.com/youtubei/v1/player?key={_INNERTUBE_KEY}"

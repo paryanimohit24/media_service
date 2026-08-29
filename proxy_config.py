@@ -1,4 +1,4 @@
-"""Proxy selection: Geonode residential proxy OR manual override OR legacy free pool."""
+"""Proxy selection: optional manual override OR legacy free pool (dev only)."""
 from __future__ import annotations
 
 import os
@@ -7,7 +7,6 @@ import threading
 from urllib.parse import urlparse
 
 from free_proxy_pool import auto_proxy_enabled, mark_bad, next_fallback_proxies, pool_status, refresh_pool
-from geonode_config import geonode_proxy_url, geonode_status
 
 _lock = threading.Lock()
 _manual_round_robin_index = 0
@@ -63,9 +62,6 @@ def get_manual_proxy() -> str | None:
 
 
 def use_free_proxy_pool() -> bool:
-    """Free public proxy pool — disabled when a paid Geonode proxy is configured."""
-    if geonode_proxy_url():
-        return False
     return auto_proxy_enabled() or proxy_fallback_attempts() > 0
 
 
@@ -81,9 +77,7 @@ def get_proxy_url() -> str | None:
 
 
 def report_proxy_failure(proxy: str | None) -> None:
-    if not proxy or geonode_proxy_url():
-        return
-    if _manual_proxy_configured():
+    if not proxy or _manual_proxy_configured():
         return
     mark_bad(proxy)
 
@@ -122,9 +116,7 @@ def mask_proxy(url: str | None) -> str | None:
 
 
 def proxy_status() -> dict:
-    if geonode_proxy_url():
-        mode = "geonode_proxy"
-    elif _manual_proxy_configured():
+    if _manual_proxy_configured():
         mode = "manual"
     elif auto_proxy_enabled():
         mode = "auto_free_rotate"
@@ -132,12 +124,12 @@ def proxy_status() -> dict:
         mode = "direct"
 
     status = {
-        "proxy_enabled": bool(geonode_proxy_url()) or _manual_proxy_configured() or auto_proxy_enabled(),
+        "import_strategy": "ytdlp_direct",
+        "proxy_enabled": _manual_proxy_configured() or auto_proxy_enabled(),
         "proxy_mode": mode,
         "proxy_max_attempts_per_request": max_attempts(),
         "proxy_direct_fallback": allow_direct_fallback(),
         "proxy_fallback_attempts": proxy_fallback_attempts(),
-        **geonode_status(),
     }
     if use_free_proxy_pool():
         status.update(pool_status())
@@ -145,17 +137,17 @@ def proxy_status() -> dict:
 
 
 def warm_pool() -> int:
-    if geonode_proxy_url() or not use_free_proxy_pool():
+    if not use_free_proxy_pool():
         return 0
     return refresh_pool(force=True)
 
 
 def direct_only() -> bool:
-    return not _manual_proxy_configured() and not auto_proxy_enabled() and not geonode_proxy_url()
+    return not _manual_proxy_configured() and not auto_proxy_enabled()
 
 
 def proxy_fallback_attempts() -> int:
-    if geonode_proxy_url() or not direct_only():
+    if not direct_only():
         return 0
     try:
         return max(0, min(3, int(os.environ.get("YT_DLP_PROXY_FALLBACK_ATTEMPTS", "3"))))

@@ -1,5 +1,5 @@
 """
-Manual test: download audio via Geonode Scraper API (+ yt-dlp fallback).
+Manual test: download audio via yt-dlp.
 
 Usage:
   python test_import.py "https://www.instagram.com/reel/XXXX/"
@@ -33,7 +33,7 @@ def _load_env_file(path: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Test social URL import via Geonode")
+    parser = argparse.ArgumentParser(description="Test social URL import via yt-dlp")
     parser.add_argument("url", nargs="?", help="Instagram / YouTube / TikTok / Snapchat URL")
     parser.add_argument("--env-file", default=".env", help="Optional .env file (default: .env)")
     parser.add_argument(

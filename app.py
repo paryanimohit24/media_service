@@ -26,8 +26,7 @@ DOWNLOAD_MODE_HEADER = "X-Import-Download-Mode"
 
 _YOUTUBE_BOT_BLOCK_MESSAGE = (
     "YouTube blocked server download from datacenter IP. "
-    "Set GEONODE_PROXY_USERNAME and GEONODE_PROXY_PASSWORD on media-import-service "
-    "(residential proxy), then redeploy."
+    "Try importing on your phone network first."
 )
 
 
