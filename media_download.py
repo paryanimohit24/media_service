@@ -42,6 +42,10 @@ def _download_headers(media_url: str) -> dict[str, str]:
         headers["Referer"] = "https://www.tiktok.com/"
     elif "cdninstagram" in lower or "instagram" in lower:
         headers["Referer"] = "https://www.instagram.com/"
+    elif "fbcdn" in lower or "facebook" in lower:
+        headers["Referer"] = "https://www.facebook.com/"
+    elif "snapchat" in lower:
+        headers["Referer"] = "https://www.snapchat.com/"
     return headers
 
 

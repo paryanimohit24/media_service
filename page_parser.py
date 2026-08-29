@@ -26,6 +26,8 @@ _TIKTOK_PLAY = re.compile(r'"playAddr"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _TIKTOK_DOWNLOAD = re.compile(r'"downloadAddr"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _CONTENT_URL = re.compile(r'"contentUrl"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _SNAPCHAT_MEDIA = re.compile(r'"mediaUrl"\s*:\s*"([^"]+)"', re.IGNORECASE)
+_FB_SD_SRC = re.compile(r'"browser_native_sd_url"\s*:\s*"([^"]+)"', re.IGNORECASE)
+_FB_HD_SRC = re.compile(r'"browser_native_hd_url"\s*:\s*"([^"]+)"', re.IGNORECASE)
 _GOOGLEVIDEO_PLAYBACK = re.compile(
     r'https?://[^"\s<>]+googlevideo\.com/videoplayback[^"\s<>]*',
     re.IGNORECASE,
@@ -93,6 +95,11 @@ def parse_media_url(html: str, platform: str | None = None) -> str | None:
     for pattern in patterns:
         for match in pattern.finditer(html):
             _add_candidate(candidates, match.group(1))
+
+    if platform == "facebook":
+        for pattern in (_FB_HD_SRC, _FB_SD_SRC):
+            for match in pattern.finditer(html):
+                _add_candidate(candidates, match.group(1))
 
     if not candidates:
         return None

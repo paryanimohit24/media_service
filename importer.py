@@ -9,6 +9,7 @@ import yt_dlp
 
 from http_headers import mobile_user_agent
 from media_download import media_to_m4a
+from native_extractor import import_via_native_extractor
 from newpipe_extractor import import_youtube_via_newpipe, newpipe_enabled
 from page_parser import detect_platform
 from youtube_innertube import fetch_youtube_audio_url, youtube_video_id
@@ -371,6 +372,24 @@ def _import_via_innertube_youtube(url: str, tmpdir: str) -> ImportResult | None:
     return None
 
 
+def _import_result_from_tuple(
+    audio_path: str,
+    title: str,
+    bytes_downloaded: int,
+    audio_size: int,
+    download_mode: str,
+) -> ImportResult:
+    ext = os.path.splitext(audio_path)[1].lstrip(".") or "m4a"
+    return ImportResult(
+        audio_path=audio_path,
+        title=title,
+        ext=ext if ext != "m4a" else "m4a",
+        bytes_downloaded=bytes_downloaded,
+        audio_size_bytes=audio_size,
+        download_mode=download_mode,
+    )
+
+
 def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
     platform = detect_platform(url)
     if not platform:
@@ -378,25 +397,23 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
             "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat, Facebook public links."
         )
 
-    if platform == "youtube" and newpipe_enabled():
-        print("[media-import] strategy=newpipe_extractor platform=youtube (yt-dlp skipped)", flush=True)
+    if newpipe_enabled():
+        print(
+            f"[media-import] strategy=newpipe_native platform={platform} (yt-dlp skipped)",
+            flush=True,
+        )
         try:
-            audio_path, title, bytes_downloaded, audio_size, download_mode = import_youtube_via_newpipe(
-                url, tmpdir
-            )
-            ext = os.path.splitext(audio_path)[1].lstrip(".") or "m4a"
-            print("[media-import] success via newpipe_extractor", flush=True)
-            return ImportResult(
-                audio_path=audio_path,
-                title=title,
-                ext=ext if ext != "m4a" else "m4a",
-                bytes_downloaded=bytes_downloaded,
-                audio_size_bytes=audio_size,
-                download_mode=download_mode,
-            )
+            if platform == "youtube":
+                result_tuple = import_youtube_via_newpipe(url, tmpdir)
+                backend = "newpipe_extractor"
+            else:
+                result_tuple = import_via_native_extractor(url, tmpdir, platform)
+                backend = "native_extractor"
+            print(f"[media-import] success via {backend}", flush=True)
+            return _import_result_from_tuple(*result_tuple)
         except Exception as e:
-            print(f"[media-import] newpipe failed: {_format_error(e)}", flush=True)
-            raise RuntimeError(f"NewPipe extractor failed: {_format_error(e)}") from e
+            print(f"[media-import] newpipe/native failed: {_format_error(e)}", flush=True)
+            raise RuntimeError(f"Import failed ({platform}): {_format_error(e)}") from e
 
     if platform == "youtube":
         print(f"[media-import] strategy=innertube_then_ytdlp platform={platform}", flush=True)

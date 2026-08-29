@@ -1,4 +1,4 @@
-"""YouTube import via NewPipe Extractor Java CLI (test alternative to yt-dlp)."""
+"""YouTube import via NewPipe Extractor Java CLI."""
 from __future__ import annotations
 
 import json

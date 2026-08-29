@@ -125,6 +125,7 @@ async def health():
     return {
         "status": "ok",
         "service": "media-url-import",
+        "import_backend": "newpipe+native" if newpipe_enabled() else "yt-dlp",
         "youtube_backend": "newpipe" if newpipe_enabled() else "yt-dlp",
         **proxy_status(),
     }
