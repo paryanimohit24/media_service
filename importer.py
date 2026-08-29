@@ -193,6 +193,11 @@ def _build_ydl_opts(
             opts["impersonate"] = "chrome"
     elif platform == "instagram":
         opts["http_headers"] = {"User-Agent": ua}
+    elif platform == "facebook":
+        opts["http_headers"] = {
+            "User-Agent": ua,
+            "Referer": "https://www.facebook.com/",
+        }
 
     if proxy:
         opts["proxy"] = proxy
@@ -369,7 +374,7 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
     platform = detect_platform(url)
     if not platform:
         raise ValueError(
-            "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat public links."
+            "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat, Facebook public links."
         )
 
     if platform == "youtube":

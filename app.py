@@ -90,7 +90,7 @@ async def import_audio(body: ImportRequest):
     if not is_supported_url(url):
         raise HTTPException(
             status_code=400,
-            detail="Unsupported URL. Paste a public Instagram, YouTube, TikTok, or Snapchat link.",
+            detail="Unsupported URL. Paste a public Instagram, YouTube, TikTok, Snapchat, or Facebook link.",
         )
     try:
         loop = asyncio.get_running_loop()

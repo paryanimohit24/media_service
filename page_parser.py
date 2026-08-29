@@ -155,6 +155,19 @@ def detect_platform(url: str) -> str | None:
     if host.endswith("snapchat.com"):
         return "snapchat"
 
+    if host in ("fb.watch", "www.fb.watch"):
+        return "facebook"
+
+    if host.endswith("facebook.com") or host.endswith("fb.com"):
+        if re.match(
+            r"^/(watch|reel|reels|videos|share|r|video)(/|$)",
+            path,
+            re.IGNORECASE,
+        ):
+            return "facebook"
+        if "/watch" in path.lower() or "/reel" in path.lower() or "/videos/" in path.lower():
+            return "facebook"
+
     return None
 
 
