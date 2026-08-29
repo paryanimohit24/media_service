@@ -18,7 +18,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, ConfigDict
 
 from importer import import_audio_from_url, is_supported_url
-from newpipe_extractor import newpipe_enabled
 from proxy_config import proxy_status
 
 BYTES_DOWNLOADED_HEADER = "X-Import-Bytes-Downloaded"
@@ -122,9 +121,4 @@ async def import_audio(body: ImportRequest):
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "ok",
-        "service": "media-url-import",
-        "youtube_backend": "newpipe" if newpipe_enabled() else "yt-dlp",
-        **proxy_status(),
-    }
+    return {"status": "ok", "service": "media-url-import", **proxy_status()}
