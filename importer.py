@@ -2,18 +2,14 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 
 import yt_dlp
 
-from geonode_client import GeonodeError, extract_html
-from geonode_config import geonode_allow_direct, geonode_enabled, geonode_max_attempts, geonode_proxy_url, mobile_user_agent
+from geonode_config import geonode_allow_direct, geonode_max_attempts, geonode_proxy_url, mobile_user_agent
 from media_download import media_to_m4a
-from page_parser import detect_platform, parse_media_url, platform_fetch_urls
+from page_parser import detect_platform
 from youtube_innertube import fetch_youtube_audio_url, youtube_video_id
 from proxy_config import (
     get_manual_proxy,
@@ -318,142 +314,6 @@ def _import_via_ytdlp_attempts(url: str, tmpdir: str, platform: str) -> ImportRe
     )
 
 
-def _platform_page_extract_platforms() -> frozenset[str]:
-    return frozenset({"snapchat", "tiktok"})
-
-
-def _title_from_url(url: str, platform: str) -> str:
-    slug = re.sub(r"[^\w-]", "_", url.rsplit("/", 1)[-1]).strip("_")
-    if not slug:
-        slug = platform
-    return f"{platform}_{slug}"[:80]
-
-
-def _page_fetch_headers(platform: str) -> dict[str, str]:
-    ua = mobile_user_agent()
-    headers = {"User-Agent": ua, "Accept": "text/html,application/xhtml+xml"}
-    if platform == "tiktok":
-        headers["Referer"] = "https://www.tiktok.com/"
-    elif platform == "youtube":
-        headers["Referer"] = "https://www.youtube.com/"
-    elif platform == "snapchat":
-        headers["Referer"] = "https://www.snapchat.com/"
-    return headers
-
-
-def _fetch_page_html_direct(page_url: str, platform: str, proxy: str | None = None) -> str:
-    headers = _page_fetch_headers(platform)
-    req = urllib.request.Request(page_url, headers=headers)
-    try:
-        if proxy:
-            opener = urllib.request.build_opener(
-                urllib.request.ProxyHandler({"http": proxy, "https": proxy})
-            )
-            with opener.open(req, timeout=45) as resp:
-                body = resp.read()
-        else:
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                body = resp.read()
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Page fetch failed (HTTP {e.code}).") from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise RuntimeError(f"Page fetch failed: {e}") from e
-
-    if not body:
-        raise RuntimeError("Page fetch returned empty body.")
-    return body.decode("utf-8", errors="replace")
-
-
-def _fetch_page_html(
-    page_url: str,
-    platform: str,
-    proxy: str | None = None,
-) -> tuple[str, str]:
-    """Return (html, source) where source is geonode_scraper or direct_fetch."""
-    if geonode_enabled():
-        html = extract_html(page_url)
-        return html, "geonode_scraper"
-
-    via = mask_proxy(proxy) or "direct"
-    print(f"[media-import] direct page fetch ({via}) {page_url}", flush=True)
-    return _fetch_page_html_direct(page_url, platform, proxy=proxy), "direct_fetch"
-
-
-def _import_via_page_extract(url: str, tmpdir: str, platform: str) -> ImportResult:
-    fetch_urls = platform_fetch_urls(url, platform)
-    page_proxies: list[str | None] = [None]
-    if geonode_proxy_url():
-        page_proxies = [geonode_proxy_url()]
-    elif manual_proxy_configured():
-        page_proxies = [get_manual_proxy(), None]
-
-    media_proxies: list[str | None] = []
-    if geonode_proxy_url():
-        media_proxies.append(geonode_proxy_url())
-    if manual_proxy_configured():
-        media_proxies.append(get_manual_proxy())
-    media_proxies.append(None)
-
-    last_error: Exception | None = None
-
-    for fetch_url in fetch_urls:
-        for page_proxy in page_proxies:
-            try:
-                html, source = _fetch_page_html(fetch_url, platform, proxy=page_proxy)
-                media_url = parse_media_url(html, platform=platform)
-                if not media_url:
-                    raise RuntimeError("Could not find media URL in page HTML.")
-
-                print(
-                    f"[media-import] page extract resolved media for {platform} via {source}",
-                    flush=True,
-                )
-
-                for media_proxy in media_proxies:
-                    try:
-                        audio_path, bytes_downloaded, download_mode = media_to_m4a(
-                            media_url,
-                            tmpdir,
-                            proxy=media_proxy,
-                            referer=fetch_url,
-                        )
-                        audio_size = os.path.getsize(audio_path)
-                        if audio_size <= 0:
-                            raise RuntimeError("Extracted audio file is empty.")
-
-                        title = _title_from_url(url, platform)
-                        return ImportResult(
-                            audio_path=audio_path,
-                            title=title,
-                            ext="m4a",
-                            bytes_downloaded=bytes_downloaded,
-                            audio_size_bytes=audio_size,
-                            download_mode=download_mode,
-                        )
-                    except Exception as download_err:
-                        last_error = download_err
-                        print(
-                            f"[media-import] media download failed "
-                            f"({mask_proxy(media_proxy) or 'direct'}): "
-                            f"{_format_error(download_err)}",
-                            flush=True,
-                        )
-                raise RuntimeError(
-                    _format_error(last_error) if last_error else "Media download failed."
-                )
-            except (GeonodeError, Exception) as e:
-                last_error = e
-                print(
-                    f"[media-import] page extract failed for {fetch_url} "
-                    f"({mask_proxy(page_proxy) or 'direct'}): {_format_error(e)}",
-                    flush=True,
-                )
-
-    raise RuntimeError(
-        _format_error(last_error) if last_error else "Page extract did not return media."
-    )
-
-
 def _import_via_innertube_youtube(url: str, tmpdir: str) -> ImportResult | None:
     video_id = youtube_video_id(url)
     if not video_id:
@@ -519,10 +379,6 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
             "Unsupported URL. Supported: Instagram, YouTube, TikTok, Snapchat public links."
         )
 
-    if platform == "instagram":
-        print(f"[media-import] strategy=instagram_ytdlp platform={platform}", flush=True)
-        return _import_via_ytdlp_attempts(url, tmpdir, platform)
-
     if platform == "youtube":
         print(f"[media-import] strategy=innertube_then_ytdlp platform={platform}", flush=True)
         try:
@@ -532,32 +388,6 @@ def import_audio_from_url(url: str, tmpdir: str) -> ImportResult:
                 return innertube_result
         except Exception as e:
             print(f"[media-import] innertube failed: {_format_error(e)}", flush=True)
-
-    if platform in _platform_page_extract_platforms():
-        print(
-            f"[media-import] strategy=page_extract_then_ytdlp platform={platform} "
-            f"geonode_scraper={geonode_enabled()}",
-            flush=True,
-        )
-        try:
-            result = _import_via_page_extract(url, tmpdir, platform)
-            print(f"[media-import] success via page_extract ({platform})", flush=True)
-            return result
-        except Exception as e:
-            print(
-                f"[media-import] page_extract failed ({platform}): {_format_error(e)}",
-                flush=True,
-            )
-            try:
-                result = _import_via_ytdlp_attempts(url, tmpdir, platform)
-                print(f"[media-import] success via yt-dlp fallback ({platform})", flush=True)
-                return result
-            except Exception as ytdlp_err:
-                combined = (
-                    f"Page extract: {_format_error(e)}. "
-                    f"yt-dlp fallback: {_format_error(ytdlp_err)}."
-                )
-                raise RuntimeError(combined) from ytdlp_err
 
     print(f"[media-import] strategy=ytdlp_direct platform={platform}", flush=True)
     return _import_via_ytdlp_attempts(url, tmpdir, platform)
