@@ -10,27 +10,22 @@ from typing import Optional, Dict
 logger = logging.getLogger("CookieService")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_env_cookies_dir = os.getenv("COOKIES_DIR", "").strip()
-COOKIES_DIR = _env_cookies_dir if _env_cookies_dir else os.path.join(BASE_DIR, "cookies")
-GLOBAL_COOKIES_FILE = os.getenv("COOKIES_FILE", os.path.join(BASE_DIR, "cookies.txt"))
+COOKIES_DIR = os.path.join(BASE_DIR, "cookies")
+GLOBAL_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 
 # Platform-specific cookie file mappings
-def _cookie_path(name: str) -> str:
-    return os.path.join(COOKIES_DIR, name)
-
-
 PLATFORM_COOKIE_MAP: Dict[str, str] = {
-    "youtube": _cookie_path("youtube.txt"),
-    "youtu.be": _cookie_path("youtube.txt"),
-    "facebook": _cookie_path("facebook.txt"),
-    "fb.watch": _cookie_path("facebook.txt"),
-    "instagram": _cookie_path("instagram.txt"),
-    "reddit": _cookie_path("reddit.txt"),
-    "redd.it": _cookie_path("reddit.txt"),
-    "pinterest": _cookie_path("pinterest.txt"),
-    "pin.it": _cookie_path("pinterest.txt"),
-    "tiktok": _cookie_path("tiktok.txt"),
-    "snapchat": _cookie_path("snapchat.txt"),
+    "youtube": os.path.join(COOKIES_DIR, "youtube.txt"),
+    "youtu.be": os.path.join(COOKIES_DIR, "youtube.txt"),
+    "facebook": os.path.join(COOKIES_DIR, "facebook.txt"),
+    "fb.watch": os.path.join(COOKIES_DIR, "facebook.txt"),
+    "instagram": os.path.join(COOKIES_DIR, "instagram.txt"),
+    "reddit": os.path.join(COOKIES_DIR, "reddit.txt"),
+    "redd.it": os.path.join(COOKIES_DIR, "reddit.txt"),
+    "pinterest": os.path.join(COOKIES_DIR, "pinterest.txt"),
+    "pin.it": os.path.join(COOKIES_DIR, "pinterest.txt"),
+    "tiktok": os.path.join(COOKIES_DIR, "tiktok.txt"),
+    "snapchat": os.path.join(COOKIES_DIR, "snapchat.txt"),
 }
 
 

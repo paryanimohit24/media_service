@@ -10,19 +10,26 @@ from typing import List, Optional, Set
 
 logger = logging.getLogger("ProxyService")
 
-def _load_proxies_from_env() -> List[str]:
-    """Load proxy URLs from PROXIES env (comma-separated). Never hardcode credentials in git."""
-    raw = os.getenv("PROXIES", "").strip()
-    if not raw:
-        return []
-    return [
-        p.strip()
-        for p in raw.split(",")
-        if p.strip() and p.strip().lower() not in ("none", "empty", "false", "0")
+# Load proxies from environment variable PROXIES (comma-separated, or 'none' for direct connection)
+_env_proxies_raw = os.getenv("PROXIES")
+if _env_proxies_raw is not None:
+    DEFAULT_PROXIES: List[str] = [
+        p.strip() for p in _env_proxies_raw.split(",")
+        if p.strip() and p.strip().lower() not in ["none", "empty", "false", "0"]
     ]
-
-
-DEFAULT_PROXIES: List[str] = _load_proxies_from_env()
+else:
+    # Production proxy fallbacks (Webshare rotating proxies)
+    DEFAULT_PROXIES: List[str] = [
+        "http://mrwxxodt:cjswosamlgqz@31.59.20.176:6754",
+        "http://mrwxxodt:cjswosamlgqz@45.38.107.97:6014",
+        "http://mrwxxodt:cjswosamlgqz@198.105.121.200:6462",
+        "http://mrwxxodt:cjswosamlgqz@64.137.96.74:6641",
+        "http://mrwxxodt:cjswosamlgqz@198.23.243.226:6361",
+        "http://mrwxxodt:cjswosamlgqz@38.154.185.97:6370",
+        "http://mrwxxodt:cjswosamlgqz@84.247.60.125:6095",
+        "http://mrwxxodt:cjswosamlgqz@191.96.254.138:6185",
+        "http://mrwxxodt:cjswosamlgqz@31.58.9.4:6077",
+    ]
 
 _failed_proxies: Set[str] = set()
 

@@ -1,0 +1,20 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.spotify.com	TRUE	/	TRUE	1800207621	sp_adid	e4297e9d-2151-4713-9a0d-e53ed4e314b0
+.spotify.com	TRUE	/	TRUE	1800207621	_hjSessionUser_3893126	eyJpZCI6IjBkNDg2YmFjLWYxZjgtNWQ4OS1iZDAzLTEyYjVlODBlNmE2NyIsImNyZWF0ZWQiOjE3Njg2NzE2MjExMTgsImV4aXN0aW5nIjpmYWxzZX0=
+.spotify.com	TRUE	/	TRUE	1819966844	sp_t	9f741254-1730-423b-bfa6-9a1f51c9c909
+.spotify.com	TRUE	/	TRUE	1813603268	sp_dc	AQDgNPtAvzs3wIqGmiGtYSZPycL9NPXYgXaLKL7avnKRJBWlVQEPL15veBeW3Q6AcZ6NP6wqD75RiPe_fzDjNYyZw1nkfCWHmAnNzLhKt9t_Rhwj1FeJpXxah_KgRFM_eFD9Ddb6ZPXTZd9LmavT6MrUCxDgwrF2rGXcObi3egustDYeY4Ti9_jUII04GnHgMPzbN5zjRrPzOFL3Y4g
+.spotify.com	TRUE	/	TRUE	1813603268	sp_key	24e7b6d2-bdaa-4127-9681-6fa5347518f6
+.spotify.com	TRUE	/	TRUE	1793256612	sp_gaid	0088fc0ab14247b3b6af7f2721cb163474c705b7de6c2d26205b33
+.spotify.com	TRUE	/	FALSE	1819608627	OptanonAlertBoxClosed	2026-08-30T06:50:27.879Z
+.spotify.com	TRUE	/	TRUE	1788449525	sp_landing	https%3A%2F%2Fopen.spotify.com%2Fartist%2F1Xyo4u8uXC1ZmMpatF05PJ
+.spotify.com	TRUE	/	TRUE	1788449525	sp_landingref	https%3A%2F%2Fwww.google.com%2F
+.spotify.com	TRUE	/	FALSE	1788517248	_gid	GA1.2.1104091429.1788363252
+.spotify.com	TRUE	/	FALSE	1819966848	OptanonConsent	isGpcEnabled=0&datestamp=Thu+Sep+03+2026+15%3A20%3A48+GMT%2B0500+(Pakistan+Standard+Time)&version=202601.2.0&browserGpcFlag=0&isIABGlobal=false&hosts=&landingPath=NotLandingPage&groups=s00%3A1%2Cf00%3A1%2Cm00%3A1%2Ct00%3A1%2Ci00%3A1%2Cf02%3A1%2Cf11%3A1%2Cm02%3A1%2Ct02%3A1%2Cm03%3A1%2CID01%3A1&geolocation=PK%3BSD&AwaitingReconsent=false
+.spotify.com	TRUE	/	TRUE	1788432648	_cs_mk_ga	0.840614031237773_1788430848520
+.spotify.com	TRUE	/	FALSE	1788430908	_gat_UA-5784146-31	1
+.spotify.com	TRUE	/	FALSE	1822990850	_ga	GA1.1.305704980.1788072625
+.spotify.com	TRUE	/	FALSE	1822990850	_ga_BMC5VGR8YS	GS2.2.s1788430850$o9$g0$t1788430850$j60$l0$h0
+.spotify.com	TRUE	/	FALSE	1822990850	_ga_ZWG1NSHWD8	GS2.1.s1788430843$o12$g1$t1788430850$j53$l0$h0

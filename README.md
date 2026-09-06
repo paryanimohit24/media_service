@@ -14,23 +14,15 @@ Unified social URL engine (demo extractor stack) for **audio import** and **vide
 
 There is **no** `/api/merge` on this service. Video merge runs on-device in the Flutter app.
 
-## Secrets
+## Secrets (private repo — demo defaults in git)
 
-- **Proxies:** set `PROXIES` env (comma-separated). Never commit credentials.
-- **Cookies:** mount Netscape cookie files via `COOKIES_DIR` or `COOKIES_FILE` (Secret Manager / volume). Files under `cookies/*.txt` are gitignored.
-
-## Local test
-
-```bash
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8001
-python3 test_import.py "https://www.instagram.com/reel/XXXX/"
-```
+- **Proxies:** Webshare list is in `services/proxy_service.py` (same as demo). Override with `PROXIES` env if needed.
+- **Cookies:** `cookies/*.txt` committed in repo (same as demo). Refresh files when sessions expire.
 
 ## Deploy
 
 Use `deploy-media-import-service.sh` (Cloud Run `media-import-service`, port `8001`). Set:
 
 - `PUBLIC_BASE_URL` — public service URL (used in extract `download_url` fields)
-- `PROXIES` — optional residential proxies
-- `COOKIES_DIR` — optional mounted cookie directory
+
+`PROXIES` and `COOKIES_DIR` are optional — defaults work out of the box like the demo.
