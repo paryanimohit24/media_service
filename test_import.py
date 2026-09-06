@@ -1,5 +1,5 @@
 """
-Manual test: download audio via yt-dlp.
+Manual test: POST /import-audio pipeline.
 
 Usage:
   python test_import.py "https://www.instagram.com/reel/XXXX/"
@@ -10,11 +10,9 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import tempfile
 from pathlib import Path
 
-from importer import import_audio_from_url, is_supported_url
-from proxy_config import proxy_status, warm_pool
+from import_audio import import_audio_from_url, is_supported_url
 
 
 def _load_env_file(path: str) -> None:
@@ -33,58 +31,39 @@ def _load_env_file(path: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Test social URL import via yt-dlp")
-    parser.add_argument("url", nargs="?", help="Instagram / YouTube / TikTok / Snapchat URL")
+    parser = argparse.ArgumentParser(description="Test /import-audio engine")
+    parser.add_argument("url", nargs="?", help="Instagram / YouTube / TikTok / Snapchat / Facebook URL")
     parser.add_argument("--env-file", default=".env", help="Optional .env file (default: .env)")
-    parser.add_argument(
-        "--proxy",
-        help="Optional admin override YT_DLP_PROXY for this run only",
-    )
-    parser.add_argument(
-        "--out",
-        default="proxy_test_output.m4a",
-        help="Output audio file path (default: proxy_test_output.m4a)",
-    )
+    parser.add_argument("--out", default="import_test_output.mp3", help="Output audio file path")
     args = parser.parse_args()
 
     if Path(args.env_file).is_file():
         _load_env_file(args.env_file)
         print(f"Loaded env from {args.env_file}")
 
-    if args.proxy:
-        os.environ["YT_DLP_PROXY"] = args.proxy
-
-    warm_pool()
-    status = proxy_status()
-    print("Proxy status:", status)
-
     url = (args.url or os.environ.get("TEST_REEL_URL") or "").strip()
     if not url:
-        print(
-            "Error: pass URL as argument or set TEST_REEL_URL in .env",
-            file=sys.stderr,
-        )
+        print("Error: pass URL as argument or set TEST_REEL_URL in .env", file=sys.stderr)
         return 1
 
     if not is_supported_url(url):
-        print("Error: unsupported URL for this service", file=sys.stderr)
+        print("Error: unsupported URL for /import-audio", file=sys.stderr)
         return 1
 
     print(f"Importing: {url}")
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = import_audio_from_url(url, tmpdir)
-            data = Path(result.audio_path).read_bytes()
-            if not data:
-                print("Error: downloaded file is empty", file=sys.stderr)
-                return 2
-            out_path = Path(args.out)
-            out_path.write_bytes(data)
-            print(f"OK: saved {len(data)} bytes -> {out_path.resolve()}")
-            print(f"Title: {result.title}")
-            return 0
-    except Exception as e:
-        print(f"FAILED: {e}", file=sys.stderr)
+        result = import_audio_from_url(url)
+        if not result.data:
+            print("Error: downloaded file is empty", file=sys.stderr)
+            return 2
+        out_path = Path(args.out)
+        out_path.write_bytes(result.data)
+        print(f"OK: saved {len(result.data)} bytes -> {out_path.resolve()}")
+        print(f"Filename: {result.filename}")
+        print(f"bytes_downloaded={result.bytes_downloaded} audio_size={result.audio_size_bytes} mode={result.download_mode}")
+        return 0
+    except Exception as exc:
+        print(f"FAILED: {exc}", file=sys.stderr)
         return 3
 
 

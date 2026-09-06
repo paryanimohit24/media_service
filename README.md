@@ -1,53 +1,36 @@
-# Media URL Import Service
+# Mixify Media Service
 
-Downloads audio from **public social URLs** using **yt-dlp** + **ffmpeg**.
+Unified social URL engine (demo extractor stack) for **audio import** and **video studio** resolution.
 
-## Supported platforms
+## Endpoints
 
-| Platform | Example URL |
-|----------|-------------|
-| Instagram | `https://www.instagram.com/reel/...` |
-| YouTube | `https://www.youtube.com/watch?v=...`, `youtu.be/...`, `/shorts/...` |
-| TikTok | `https://www.tiktok.com/@user/video/...`, `vm.tiktok.com/...` |
-| Snapchat | `https://www.snapchat.com/t/...`, `story.snapchat.com/...` |
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Health check |
+| `GET` | `/api/extract/video` | Resolve video CDN stream URL (JSON) |
+| `GET` | `/api/extract/audio` | Resolve audio CDN stream URL (JSON) |
+| `GET` | `/api/download` | Server ffmpeg transcode fallback (HLS / blocked CDN) — **no merge** |
+| `POST` | `/import-audio` | Backward-compatible Spring proxy contract (audio bytes) |
 
-## Import strategy
+There is **no** `/api/merge` on this service. Video merge runs on-device in the Flutter app.
 
-1. **Flutter app (user IP)** — Instagram reels download on the phone network first.
-2. **Server fallback** — yt-dlp direct from Cloud Run IP (optional `YT_DLP_PROXY` if blocked).
+## Secrets
 
-## Env (Cloud Run)
+- **Proxies:** set `PROXIES` env (comma-separated). Never commit credentials.
+- **Cookies:** mount Netscape cookie files via `COOKIES_DIR` or `COOKIES_FILE` (Secret Manager / volume). Files under `cookies/*.txt` are gitignored.
 
-```env
-YT_DLP_AUTO_PROXY=false
-YT_DLP_PROXY_FALLBACK_ATTEMPTS=0
-# Optional:
-# YT_DLP_PROXY=http://user:pass@host:port
-# YT_DLP_COOKIES_FILE=/path/to/cookies.txt
-```
-
-## Local run
+## Local test
 
 ```bash
-cd media_service
-cp .env.example .env
 pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8001
+python3 test_import.py "https://www.instagram.com/reel/XXXX/"
 ```
 
-```bash
-python test_import.py "https://www.instagram.com/reel/XXXX/" --out test.m4a
-```
+## Deploy
 
-## Spring backend
+Use `deploy-media-import-service.sh` (Cloud Run `media-import-service`, port `8001`). Set:
 
-```
-url-import.enabled=true
-url-import.service.url=http://localhost:8001
-```
-
-## Honest limits
-
-- Instagram reels should use the **phone client path** (user IP) — server datacenter IP may fail.
-- YouTube/TikTok may block datacenter IPs without optional `YT_DLP_PROXY`.
-- Instagram ToS / Play Store policy risk — feature behind `kEnableReelUrlImport`.
+- `PUBLIC_BASE_URL` — public service URL (used in extract `download_url` fields)
+- `PROXIES` — optional residential proxies
+- `COOKIES_DIR` — optional mounted cookie directory

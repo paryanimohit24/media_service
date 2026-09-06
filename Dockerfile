@@ -13,4 +13,8 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r re
 COPY . .
 EXPOSE 8001
 ENV PORT=8001
+ENV PYTHONUNBUFFERED=1
+ENV TEMP_DIR=/tmp
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
+ENV FFPROBE_PATH=/usr/bin/ffprobe
 CMD uvicorn app:app --host 0.0.0.0 --port ${PORT} --workers 1

@@ -1,1 +1,8 @@
 __pycache__/
+*.pyc
+.env
+cookies/*.txt
+cookies.txt
+*.m4a
+*.mp3
+*.mp4
