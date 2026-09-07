@@ -41,10 +41,14 @@ _REDDIT_URL = re.compile(
     r"^https?://((www\.|old\.|m\.|np\.)?reddit\.com/|redd\.it/)[^?#\s]+.*$",
     re.IGNORECASE,
 )
+_SPOTIFY_URL = re.compile(
+    r"^https?://([\w-]+\.)*spotify\.com/[^?#\s]+.*$",
+    re.IGNORECASE,
+)
 
 SUPPORTED_URLS_MESSAGE = (
     "Unsupported URL. Paste a public Instagram, YouTube, TikTok, Snapchat, "
-    "Facebook, Pinterest, or Reddit link."
+    "Facebook, Pinterest, Reddit, or Spotify link."
 )
 
 
@@ -70,6 +74,7 @@ def is_supported_url(url: str) -> bool:
         or _FACEBOOK_URL.match(trimmed)
         or _PINTEREST_URL.match(trimmed)
         or _REDDIT_URL.match(trimmed)
+        or _SPOTIFY_URL.match(trimmed)
     )
 
 
