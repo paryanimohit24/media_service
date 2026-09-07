@@ -30,6 +30,7 @@ from import_audio import (
     AUDIO_SIZE_HEADER,
     BYTES_DOWNLOADED_HEADER,
     DOWNLOAD_MODE_HEADER,
+    SUPPORTED_URLS_MESSAGE,
     import_audio_from_url,
     is_supported_url,
 )
@@ -139,7 +140,7 @@ async def import_audio(body: ImportRequest, request: Request):
     if not is_supported_url(url):
         raise HTTPException(
             status_code=400,
-            detail="Unsupported URL. Paste a public Instagram, YouTube, TikTok, Snapchat, or Facebook link.",
+            detail=SUPPORTED_URLS_MESSAGE,
         )
     client_ip = get_client_ip(request)
     try:

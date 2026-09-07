@@ -22,7 +22,7 @@ _YOUTUBE_URL = re.compile(
     re.IGNORECASE,
 )
 _TIKTOK_URL = re.compile(
-    r"^https?://((www\.|vm\.|vt\.|m\.)?tiktok\.com/)[^?#]+.*$",
+    r"^https?://([\w-]+\.)*tiktok\.com/[^?#\s]+.*$",
     re.IGNORECASE,
 )
 _SNAPCHAT_URL = re.compile(
@@ -32,6 +32,19 @@ _SNAPCHAT_URL = re.compile(
 _FACEBOOK_URL = re.compile(
     r"^https?://((www\.|m\.)?facebook\.com/(watch|reel|reels|videos|share|r|video)/|fb\.watch/)[^?#]+.*$",
     re.IGNORECASE,
+)
+_PINTEREST_URL = re.compile(
+    r"^https?://((www\.|m\.)?pinterest\.com/|pin\.it/)[^?#\s]+.*$",
+    re.IGNORECASE,
+)
+_REDDIT_URL = re.compile(
+    r"^https?://((www\.|old\.|m\.|np\.)?reddit\.com/|redd\.it/)[^?#\s]+.*$",
+    re.IGNORECASE,
+)
+
+SUPPORTED_URLS_MESSAGE = (
+    "Unsupported URL. Paste a public Instagram, YouTube, TikTok, Snapchat, "
+    "Facebook, Pinterest, or Reddit link."
 )
 
 
@@ -55,6 +68,8 @@ def is_supported_url(url: str) -> bool:
         or _TIKTOK_URL.match(trimmed)
         or _SNAPCHAT_URL.match(trimmed)
         or _FACEBOOK_URL.match(trimmed)
+        or _PINTEREST_URL.match(trimmed)
+        or _REDDIT_URL.match(trimmed)
     )
 
 

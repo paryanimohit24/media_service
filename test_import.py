@@ -32,7 +32,7 @@ def _load_env_file(path: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Test /import-audio engine")
-    parser.add_argument("url", nargs="?", help="Instagram / YouTube / TikTok / Snapchat / Facebook URL")
+    parser.add_argument("url", nargs="?", help="Supported social video/audio URL")
     parser.add_argument("--env-file", default=".env", help="Optional .env file (default: .env)")
     parser.add_argument("--out", default="import_test_output.mp3", help="Output audio file path")
     args = parser.parse_args()
