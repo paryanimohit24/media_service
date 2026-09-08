@@ -17,4 +17,4 @@ ENV PYTHONUNBUFFERED=1
 ENV TEMP_DIR=/tmp
 ENV FFMPEG_PATH=/usr/bin/ffmpeg
 ENV FFPROBE_PATH=/usr/bin/ffprobe
-CMD uvicorn app:app --host 0.0.0.0 --port ${PORT} --workers 1
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT} --workers 1"]

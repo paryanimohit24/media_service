@@ -14,7 +14,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Building Docker image..."
-docker build -t $Image .
+# Clear stale BuildKit layers (fixes "parent snapshot does not exist" on Windows).
+docker builder prune -f 2>$null | Out-Null
+docker build --pull -t $Image .
 if ($LASTEXITCODE -ne 0) { throw "docker build failed" }
 
 Write-Host "Pushing image..."
