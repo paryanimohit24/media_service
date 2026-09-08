@@ -14,7 +14,9 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 echo "Building Docker image..."
-docker build -t "$IMAGE" .
+# Clear stale BuildKit layers (fixes "parent snapshot does not exist").
+docker builder prune -f >/dev/null 2>&1 || true
+docker build --pull -t "$IMAGE" .
 
 echo "Pushing image..."
 docker push "$IMAGE"
