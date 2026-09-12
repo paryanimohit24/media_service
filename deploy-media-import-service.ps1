@@ -39,7 +39,7 @@ gcloud run deploy $Service `
     --cpu 1 `
     --timeout 360 `
     --min-instances 0 `
-    --max-instances 3 `
+    --max-instances 10 `
     --set-env-vars $EnvVars `
     --allow-unauthenticated `
     --quiet
